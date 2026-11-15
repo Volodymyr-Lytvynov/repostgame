@@ -40,7 +40,7 @@ export function ScreenApp({ code }: { code: string }) {
           {view.paused ? <div className="text-4xl font-semibold text-[#ffb020]">Пауза</div> : null}
           {!view.paused && left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-4xl font-semibold tabular-nums">{left}</div> : null}
           {view.debug && !view.paused ? <p className="text-sm text-[#ffb020]">Проверка</p> : null}
-          <p className="max-w-[16rem] text-sm text-white/60">{phaseLabel(view.phase)}</p>
+          <p className="max-w-[16rem] text-sm text-white/60">{phaseLabel(view.phase, view.kind)}</p>
         </div>
       </header>
 
@@ -58,9 +58,10 @@ export function ScreenApp({ code }: { code: string }) {
               twist={view.spotlight.twist}
               photo={view.spotlight.photo}
               author={view.spotlight.authorName}
+              poster={view.spotlight.twisterName}
               topic={view.spotlight.topic}
             />
-            <p className="mt-3 text-center text-white/70">фраза {view.spotlight.authorName} · подкол {view.spotlight.twisterName}</p>
+            <p className="mt-3 text-center text-white/70">{view.spotlight.kind === "thread" ? `реплай ${view.spotlight.authorName} · пост ${view.spotlight.twisterName}` : `фраза ${view.spotlight.authorName} · подкол ${view.spotlight.twisterName}`}</p>
           </div>
         ) : null}
         {view.phase === "vote" ? <Ballot view={view} /> : null}
@@ -98,14 +99,16 @@ function Lobby({ view }: { view: ClientView }) {
 function Ballot({ view }: { view: ClientView }) {
   return (
     <div className="w-full">
-      {view.round === 0 ? (
+      {view.kind === "thread" ? (
+        <p className="mb-4 text-center text-white/70">Лайк приносит паре 100 очков: по 50 автору реплая и тому, кто поставил пост. Если пара одна впереди — ещё по 100. В финале всё ×2.</p>
+      ) : view.round === 0 ? (
         <p className="mb-4 text-center text-white/70">100 очков за голос получает тот, кто вывернул фразу. Если одна карточка впереди — ещё 200. В финале оба числа ×2.</p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {view.ballot.map((card) => (
           <div key={card.seat} className="relative">
-            <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
-            <span className="absolute right-2 top-2 rounded-full bg-black/80 px-2 py-1 text-sm text-white">{card.votes}</span>
+            <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} poster={card.twisterName} likes={card.votes} topic={card.topic} />
+            {card.kind === "thread" ? null : <span className="absolute right-2 top-2 rounded-full bg-black/80 px-2 py-1 text-sm text-white">{card.votes}</span>}
           </div>
         ))}
       </div>

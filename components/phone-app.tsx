@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
+import { handleOf, roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
 import { phaseLabel } from "@/lib/game/view";
 import type { ClientView, PlayerTask, RoundKind } from "@/lib/game/types";
 import { DebugBar } from "./debug-bar";
-import { SiteCard } from "./site-card";
+import { SiteCard, EchoAvatar, EchoName, EchoShell } from "./site-card";
 import { QrImage } from "./qr-image";
 import { readSession, useRoom, writeSession } from "./use-room";
 
@@ -105,7 +105,7 @@ function Controller({
       <header className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm text-white/50">{view.phase === "lobby" ? `Комната ${code}` : `${roundTitle(view.kind ?? "thread")} · ${view.round + 1}/${view.roundCount}`}</p>
-          <h1 className="text-2xl font-semibold">{view.phase === "lobby" ? "Ждём игроков" : phaseLabel(view.phase)}</h1>
+          <h1 className="text-2xl font-semibold">{view.phase === "lobby" ? "Ждём игроков" : phaseLabel(view.phase, view.kind)}</h1>
           {finale && view.phase !== "done" ? <p className="text-sm text-[#ffb020]">Финал, очки ×2</p> : null}
         </div>
         {view.paused ? <div className="text-3xl font-semibold text-[#ffb020]">Пауза</div> : null}
@@ -211,6 +211,36 @@ function WriteForm({ task, send }: { task: Extract<PlayerTask, { phase: "write" 
       </div>
     );
   }
+  if (task.kind === "thread") {
+    return (
+      <form onSubmit={(event) => { event.preventDefault(); void submit(null); }}>
+        <EchoShell>
+          <div className="flex gap-3">
+            <div className="flex w-10 flex-col items-center">
+              <EchoAvatar name="лента" />
+              <span className="mt-1 min-h-4 w-0.5 flex-1 rounded-full bg-[#f6f1ea]/20" />
+            </div>
+            <div className="min-w-0 flex-1 pb-3">
+              <EchoName name="лента" />
+              <p className="mt-1 text-[17px] leading-snug">{copy.hint}</p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex w-10 justify-center">
+              <EchoAvatar name="вы" />
+            </div>
+            <label className="min-w-0 flex-1">
+              <span className="text-[13px] text-[#f6f1ea]/45">Ваш ответ · в ответ {handleOf("лента")}</span>
+              <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-1 h-11 border-0 bg-white/10 px-3 text-base text-[#f6f1ea] placeholder:text-[#f6f1ea]/35 md:text-base" />
+            </label>
+          </div>
+        </EchoShell>
+        <div className="mt-2 text-sm text-white/45">{text.length}/{task.max}</div>
+        {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
+        <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Ответить</Button>
+      </form>
+    );
+  }
   return (
     <form onSubmit={(event) => { event.preventDefault(); void submit(null); }}>
       <h2 className="text-2xl font-semibold">{copy.title}</h2>
@@ -230,20 +260,49 @@ function TwistForm({ task, send }: { task: Extract<PlayerTask, { phase: "twist" 
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      await send({ type: "twist", text });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Не отправилось");
+      setPending(false);
+    }
+  }
+  if (task.kind === "thread") {
+    return (
+      <form onSubmit={(event) => void submit(event)}>
+        <EchoShell>
+          <div className="flex gap-3">
+            <div className="flex w-10 flex-col items-center">
+              <EchoAvatar name="вы" />
+              <span className="mt-1 min-h-4 w-0.5 flex-1 rounded-full bg-[#f6f1ea]/20" />
+            </div>
+            <label className="min-w-0 flex-1 pb-3">
+              <span className="text-[13px] text-[#f6f1ea]/45">Ваш пост</span>
+              <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-1 h-11 border-0 bg-white/10 px-3 text-base text-[#f6f1ea] placeholder:text-[#f6f1ea]/35 md:text-base" />
+            </label>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex w-10 justify-center">
+              <EchoAvatar name={task.sourceName || "?"} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <EchoName name={task.sourceName || "Игрок"} />
+              <p className="mt-1 text-[17px] leading-snug">{task.sourceText}</p>
+            </div>
+          </div>
+        </EchoShell>
+        <div className="mt-2 text-sm text-white/45">{text.length}/{task.max}</div>
+        {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
+        <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Поставить</Button>
+      </form>
+    );
+  }
   return (
-    <form
-      onSubmit={async (event) => {
-        event.preventDefault();
-        setPending(true);
-        setError(null);
-        try {
-          await send({ type: "twist", text });
-        } catch (caught) {
-          setError(caught instanceof Error ? caught.message : "Не отправилось");
-          setPending(false);
-        }
-      }}
-    >
+    <form onSubmit={(event) => void submit(event)}>
       <p className="text-sm text-white/50">Фраза {task.sourceName}</p>
       {task.photo ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -268,8 +327,8 @@ function VoteForm({
   const [error, setError] = useState<string | null>(null);
   return (
     <div className="space-y-3">
-      <h2 className="text-2xl font-semibold">Что стыднее?</h2>
-      <p className="text-white/60">Свой подкол выбрать нельзя. Голос можно сменить, пока идёт таймер.</p>
+      <h2 className="text-2xl font-semibold">{task.options[0]?.kind === "thread" ? "Кому лайк?" : "Что стыднее?"}</h2>
+      <p className="text-white/60">{task.options[0]?.kind === "thread" ? "Свой пост лайкнуть нельзя. Лайк можно сменить, пока идёт таймер." : "Свой подкол выбрать нельзя. Голос можно сменить, пока идёт таймер."}</p>
       {task.options.map((card) => (
         <button
           key={card.seat}
@@ -278,8 +337,8 @@ function VoteForm({
           onClick={() => void send({ type: "vote", seat: card.seat }).catch((caught: Error) => setError(caught.message))}
           className={`block w-full rounded-2xl text-left ${card.selected ? "ring-2 ring-[#ff5a36]" : ""} ${card.mine ? "opacity-50" : ""}`}
         >
-          <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
-          {card.mine ? <span className="mt-1 block text-sm text-white/50">Это твой подкол</span> : null}
+          <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} poster={card.twisterName} likes={card.votes} topic={card.topic} />
+          {card.mine ? <span className="mt-1 block text-sm text-white/50">{card.kind === "thread" ? "Это твой пост" : "Это твой подкол"}</span> : null}
         </button>
       ))}
       {error ? <p className="text-sm text-[#ff8d72]">{error}</p> : null}
@@ -298,7 +357,7 @@ function Waiting({ view }: { view: ClientView }) {
       </div>
     );
   }
-  return <p className="text-lg text-white/70">Ответ ушёл. Смотри на общий экран: {phaseLabel(view.phase).toLowerCase()}.</p>;
+  return <p className="text-lg text-white/70">Ответ ушёл. Смотри на общий экран: {phaseLabel(view.phase, view.kind).toLowerCase()}.</p>;
 }
 
 function Done({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addBot, advancePhase, applyFallback, drawPlaylist, freshRoom, MATCH_SIZE, missingTopics, nextMatch, pauseGame, scoreRound, setCap, setDebug, startGame, submitVote, submitWrite, tick, twisterSeat } from "./engine";
+import { addBot, advancePhase, applyFallback, drawPlaylist, freshRoom, MATCH_SIZE, missingTopics, nextMatch, pauseGame, scoreRound, setCap, setDebug, startGame, submitTwist, submitVote, submitWrite, tick, twisterSeat } from "./engine";
 import { ROUND_KINDS, type RoomState } from "./types";
 
 const stick = () => 0.999999;
@@ -192,5 +192,40 @@ describe("votes", () => {
     const voter = state.seats[1];
     const own = (1 - 1 + 3) % 3;
     expect(() => submitVote(state, voter, own, state.deadline ?? 0)).toThrow(/свой подкол/);
+  });
+});
+
+describe("replies", () => {
+  it("mixes a reply under a new post and pays whoever wrote that post", () => {
+    let state = startGame(
+      ready(
+        freshRoom({
+          code: "TEST",
+          hostToken: "host",
+          cap: 3,
+          demo: false,
+          playlist: ["thread", "messenger", "job", "market"],
+          now: 0,
+        }),
+      ),
+      0,
+    );
+    for (const id of state.seats) state = submitWrite(state, id, "реплай", null, 1000);
+    expect(state.phase).toBe("twist");
+    for (const id of state.seats) state = submitTwist(state, id, "новый пост", 2000);
+    expect(state.phase).toBe("reveal");
+    state = {
+      ...state,
+      votes: [
+        { round: 0, voterId: state.seats[0], seat: 1 },
+        { round: 0, voterId: state.seats[2], seat: 1 },
+      ],
+    };
+    const events = scoreRound(state);
+    expect(events).toEqual([
+      expect.objectContaining({ playerId: state.seats[1], delta: 200, reason: expect.stringContaining("за реплай") }),
+      expect.objectContaining({ playerId: state.seats[twisterSeat(1, 3)], delta: 200, reason: expect.stringContaining("за пост") }),
+    ]);
+    expect(() => submitVote({ ...state, phase: "vote" }, state.seats[twisterSeat(1, 3)], 1, 2000)).toThrow(/пост/);
   });
 });

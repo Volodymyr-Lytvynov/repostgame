@@ -21,12 +21,36 @@ describe("bench scores", () => {
 
   it("doubles the finale and ignores a vote for your own twist", () => {
     const scores = benchScores({
-      kind: "thread",
+      kind: "messenger",
       finale: true,
       rows,
       votes: [1, 1, 1],
     });
     expect(scores).toEqual([{ name: "Ира", delta: 800, reason: expect.stringContaining("финал") }]);
+  });
+
+  it("splits likes between the reply and the post", () => {
+    const scores = benchScores({
+      kind: "thread",
+      finale: false,
+      rows,
+      votes: [1, 1, 1],
+    });
+    expect(scores).toEqual([
+      { name: "Макс", delta: 200, reason: expect.stringContaining("за реплай") },
+      { name: "Ира", delta: 200, reason: expect.stringContaining("за пост") },
+    ]);
+  });
+
+  it("does not score a reply with no text", () => {
+    const scores = benchScores({
+      kind: "thread",
+      finale: false,
+      rows: rows.map((row, seat) => (seat === 1 ? { ...row, write: " " } : row)),
+      votes: [0, 0, 1],
+    });
+    expect(scores.map((score) => score.name)).toEqual(["Оля", "Макс"]);
+    expect(scores.map((score) => score.delta)).toEqual([150, 150]);
   });
 
   it("does not score a card without a twist", () => {

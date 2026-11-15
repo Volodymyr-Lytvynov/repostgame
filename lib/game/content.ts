@@ -29,7 +29,8 @@ export function roundTitle(kind: RoundKind): string {
 
 export function limits(kind: RoundKind): { write: number; twist: number } {
   if (kind === "ai") return { write: 140, twist: 90 };
-  if (kind === "thread" || kind === "review") return { write: 110, twist: 36 };
+  if (kind === "thread") return { write: 140, twist: 140 };
+  if (kind === "review") return { write: 110, twist: 36 };
   if (kind === "instagram") return { write: 8, twist: 80 };
   if (kind === "video") return { write: 90, twist: 48 };
   if (kind === "messenger") return { write: 80, twist: 28 };
@@ -42,7 +43,7 @@ export function writeCopy(kind: RoundKind, topic: string): { title: string; hint
     case "messenger":
       return { title: "Напиши сообщение", hint, placeholder: "Я уже выехал" };
     case "thread":
-      return { title: "Напиши пост", hint, placeholder: "Обожаю, когда все смотрят" };
+      return { title: "Допиши реплай", hint, placeholder: "Я там был, это не так" };
     case "job":
       return { title: "Строка в сопроводительное", hint, placeholder: "Люблю работать с людьми" };
     case "market":
@@ -65,7 +66,7 @@ export function twistCopy(kind: RoundKind): { title: string; placeholder: string
     case "messenger":
       return { title: "Кому это отправили?", placeholder: "Маме" };
     case "thread":
-      return { title: "Хештег, от которого стыдно", placeholder: "совещание" };
+      return { title: "Под какой пост это поставить?", placeholder: "Я больше не пью. С понедельника." };
     case "job":
       return { title: "На какую должность это подали?", placeholder: "смотритель очереди" };
     case "market":
@@ -96,12 +97,12 @@ const BOTS: Record<RoundKind, Pair[]> = {
     { write: "Давай как в прошлый раз", twist: "В рабочий чат" },
   ],
   thread: [
-    { write: "Обожаю, когда все смотрят", twist: "совещание" },
-    { write: "Лучший вечер в моей жизни", twist: "очередь в налоговую" },
-    { write: "Больше так не могу", twist: "пробный день" },
-    { write: "Они сами пришли", twist: "родительское собрание" },
-    { write: "Тихо, но очень вкусно", twist: "открытый микрофон" },
-    { write: "Главное никому не показывать", twist: "сторис" },
+    { write: "Я там был, это не так", twist: "Объявление на двери подъезда" },
+    { write: "Удали, пока мама не увидела", twist: "Письмо всему офису" },
+    { write: "Можно чуть больше подробностей", twist: "Статус в три ночи" },
+    { write: "Я так и знал", twist: "Комментарий под рецептом" },
+    { write: "Это точно не про меня", twist: "Сообщение в чат родителей" },
+    { write: "Сохрани, потом пригодится", twist: "Открытка коллеге" },
   ],
   job: [
     { write: "Быстро учусь на своих ошибках", twist: "дегустатор просрочки" },
@@ -173,14 +174,14 @@ const TOPICS: Record<RoundKind, Topic[]> = {
     { topic: "Признайся, что забыл про встречу", query: "" },
   ],
   thread: [
-    { topic: "Поделись, как прошёл день", query: "" },
-    { topic: "Расскажи про ужин без подробностей", query: "" },
-    { topic: "Похвали себя за маленькую победу", query: "" },
-    { topic: "Опиши утро одним предложением", query: "" },
-    { topic: "Напиши, чему ты внезапно рад", query: "" },
-    { topic: "Пожалуйся очень мягко", query: "" },
-    { topic: "Анонсируй планы на вечер", query: "" },
-    { topic: "Оставь совет, который сам не соблюдаешь", query: "" },
+    { topic: "Я больше не пью. С понедельника.", query: "" },
+    { topic: "Это был последний раз, честно", query: "" },
+    { topic: "Маме лучше не знать, но", query: "" },
+    { topic: "Мы просто коллеги", query: "" },
+    { topic: "Я случайно ответил не в тот чат", query: "" },
+    { topic: "Завтра всем всё объясню", query: "" },
+    { topic: "Он сам первый написал", query: "" },
+    { topic: "Никому не говорите, что я", query: "" },
   ],
   job: [
     { topic: "Одна сильная сторона, без скромности", query: "" },

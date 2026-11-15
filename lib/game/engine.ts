@@ -308,6 +308,11 @@ export function sourceSeatFor(seat: number, count: number): number {
   return (seat - 1 + count) % count;
 }
 
+export function blockedSeat(state: RoomState, voterSeat: number): number {
+  if (voterSeat < 0) return -1;
+  return sourceSeatFor(voterSeat, state.seats.length);
+}
+
 export function startGame(state: RoomState, now: number): RoomState {
   if (!isDeckReady(state)) throw new GameError("Колода ещё собирается");
   if (state.players.length < 3) throw new GameError("Нужно минимум три игрока");
@@ -562,7 +567,7 @@ export function submitTwist(state: RoomState, playerId: string, text: string, no
   const source = sourceSeatFor(seat, state.seats.length);
   const kind = currentKind(state);
   const clean = cleanText(text, limits(kind).twist);
-  if (!clean) throw new GameError("Пустой подкол не отправишь");
+  if (!clean) throw new GameError(kind === "thread" ? "Пустой пост не отправишь" : "Пустой подкол не отправишь");
   const twists = state.twists.filter((item) => !(item.round === state.round && item.seat === source));
   twists.push({ round: state.round, seat: source, twisterId: playerId, text: clean });
   return tick({ ...state, twists }, now);
@@ -571,8 +576,8 @@ export function submitTwist(state: RoomState, playerId: string, text: string, no
 export function submitVote(state: RoomState, playerId: string, seat: number, now: number): RoomState {
   if (state.phase !== "vote") throw new GameError("Сейчас не время голосовать");
   if (!votableSeats(state).includes(seat)) throw new GameError("За эту карточку нельзя голосовать");
-  const mine = sourceSeatFor(state.seats.indexOf(playerId), state.seats.length);
-  if (seat === mine) throw new GameError("За свой подкол голосовать нельзя");
+  const mine = blockedSeat(state, state.seats.indexOf(playerId));
+  if (seat === mine) throw new GameError(currentKind(state) === "thread" ? "Свой пост лайкнуть нельзя" : "За свой подкол голосовать нельзя");
   const votes = state.votes.filter((item) => !(item.round === state.round && item.voterId === playerId));
   votes.push({ round: state.round, voterId: playerId, seat });
   return tick({ ...state, votes }, now);
@@ -650,13 +655,13 @@ export function votableSeats(state: RoomState): number[] {
 function voterCanVote(state: RoomState, playerId: string): boolean {
   const seat = state.seats.indexOf(playerId);
   if (seat < 0) return false;
-  const forbidden = sourceSeatFor(seat, state.seats.length);
+  const forbidden = blockedSeat(state, seat);
   return votableSeats(state).some((candidate) => candidate !== forbidden);
 }
 
 function botChoice(state: RoomState, playerId: string): number | null {
   const seat = state.seats.indexOf(playerId);
-  const forbidden = sourceSeatFor(seat, state.seats.length);
+  const forbidden = blockedSeat(state, seat);
   const options = votableSeats(state).filter((candidate) => candidate !== forbidden);
   if (options.length === 0) return null;
   return [...options].sort((a, b) => (twistFor(state, b)?.text.length ?? 0) - (twistFor(state, a)?.text.length ?? 0) || a - b)[0];
@@ -678,16 +683,28 @@ export function scoreRound(state: RoomState): ScoreEvent[] {
   const leaders = [...counts.entries()].filter(([, count]) => count === max && count > 0);
   const best = leaders.length === 1 ? leaders[0][0] : null;
   const finale = state.round === state.playlist.length - 1;
+  const reply = currentKind(state) === "thread";
   const events: ScoreEvent[] = [];
   for (const [seat, count] of counts) {
     if (!count) continue;
     const twist = twistFor(state, seat);
-    if (!twist) continue;
+    if (!twist?.text) continue;
     const isBest = seat === best;
+    const finaleMark = finale ? " · финал ×2" : "";
+    if (reply) {
+      const authorId = submissionFor(state, seat)?.authorId;
+      const share = count * 50 + (isBest ? 100 : 0);
+      const delta = finale ? share * 2 : share;
+      const marks = `${count} ${plural(count, "лайк", "лайка", "лайков")}`;
+      const tail = `${isBest ? " и больше всех" : ""}${finaleMark}`;
+      if (authorId) events.push({ round: state.round, playerId: authorId, delta, reason: `${marks} за реплай${tail}` });
+      events.push({ round: state.round, playerId: twist.twisterId, delta, reason: `${marks} за пост${tail}` });
+      continue;
+    }
     const raw = count * 100 + (isBest ? 200 : 0);
     const delta = finale ? raw * 2 : raw;
-    const votes = `${count} ${plural(count, "голос", "голоса", "голосов")}`;
-    const reason = `${votes}${isBest ? " и лучший подкол" : ""}${finale ? " · финал ×2" : ""}`;
+    const marks = `${count} ${plural(count, "голос", "голоса", "голосов")}`;
+    const reason = `${marks}${isBest ? " и лучший подкол" : ""}${finaleMark}`;
     events.push({ round: state.round, playerId: twist.twisterId, delta, reason });
   }
   return events;

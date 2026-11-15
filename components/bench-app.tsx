@@ -132,9 +132,9 @@ export function BenchApp() {
             return (
               <section key={card.seat} className="grid gap-4 rounded-3xl bg-white/5 p-4 md:grid-cols-[minmax(0,1fr)_280px]">
                 <div>
-                  <p className="text-sm text-white/50">{author} пишет · {twister} выворачивает</p>
+                  <p className="text-sm text-white/50">{kind === "thread" ? `${author} пишет реплай · ${twister} ставит пост` : `${author} пишет · ${twister} выворачивает`}</p>
                   <label className="mt-3 block text-sm text-white/55">
-                    Заход
+                    {kind === "thread" ? "Заготовка" : "Заход"}
                     <textarea value={card.topic} onChange={(event) => patch(card.seat, { topic: event.target.value })} className="mt-1 min-h-16 w-full rounded-xl bg-black/30 px-3 py-2 text-base text-white" />
                   </label>
                   {kind === "instagram" ? (
@@ -164,15 +164,15 @@ export function BenchApp() {
                     <span className="mt-1 block text-white/35">{card.twist.length}/{max.twist}</span>
                   </label>
                 </div>
-                <SiteCard kind={kind} mode="show" compact write={card.write} twist={card.twist} photo={photo} author={author} topic={card.topic} />
+                <SiteCard kind={kind} mode="show" compact write={card.write} twist={card.twist} photo={photo} author={author} poster={twister} likes={votes.filter((choice) => choice === card.seat).length} topic={card.topic} />
               </section>
             );
           })}
         </div>
         <aside className="space-y-4 lg:sticky lg:top-6">
           <section className="rounded-3xl bg-white/5 p-4">
-            <h2 className="text-xl font-semibold">Голоса</h2>
-            <p className="mt-1 text-sm text-white/50">За свой подкол голосовать нельзя.</p>
+            <h2 className="text-xl font-semibold">{kind === "thread" ? "Лайки" : "Голоса"}</h2>
+            <p className="mt-1 text-sm text-white/50">{kind === "thread" ? "Свой пост лайкнуть нельзя." : "За свой подкол голосовать нельзя."}</p>
             <div className="mt-3 space-y-3">
               {cards?.map((_, voter) => {
                 const forbidden = sourceSeatFor(voter, cards.length);
@@ -203,7 +203,7 @@ export function BenchApp() {
           </section>
           <section className="rounded-3xl bg-white/5 p-4">
             <h2 className="text-xl font-semibold">Очки</h2>
-            {scores.length === 0 ? <p className="mt-2 text-sm text-white/50">Пока пусто. Нужны подкол и чужой голос. Пустая фраза, кроме Витрины, в счёт не идёт.</p> : (
+            {scores.length === 0 ? <p className="mt-2 text-sm text-white/50">{kind === "thread" ? "Пока пусто. Нужны реплай, пост и чужой лайк." : "Пока пусто. Нужны подкол и чужой голос. Пустая фраза, кроме Витрины, в счёт не идёт."}</p> : (
               <ul className="mt-3 space-y-3">
                 {scores.map((score) => (
                   <li key={score.name}>

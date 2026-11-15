@@ -1,5 +1,6 @@
 import { limits, twistCopy } from "./content";
 import {
+  blockedSeat,
   currentKind,
   deckProgress,
   playerById,
@@ -134,7 +135,7 @@ function taskFor(state: RoomState, playerId: string): PlayerTask | null {
     };
   }
   if (state.phase === "vote") {
-    const forbidden = sourceSeatFor(seat, state.seats.length);
+    const forbidden = blockedSeat(state, seat);
     const selected = state.votes.find((vote) => vote.round === state.round && vote.voterId === playerId)?.seat;
     const options = votableSeats(state)
       .map((candidate) => shownCard(state, candidate))
@@ -146,11 +147,11 @@ function taskFor(state: RoomState, playerId: string): PlayerTask | null {
   return null;
 }
 
-export function phaseLabel(phase: ClientView["phase"]): string {
-  if (phase === "write") return "Все пишут ответ";
-  if (phase === "twist") return "Чужие фразы выворачивают";
-  if (phase === "reveal") return "Смотрим, что получилось";
-  if (phase === "vote") return "Голос за самый стыдный вариант";
+export function phaseLabel(phase: ClientView["phase"], kind?: ClientView["kind"]): string {
+  if (phase === "write") return kind === "thread" ? "Все пишут реплай" : "Все пишут ответ";
+  if (phase === "twist") return kind === "thread" ? "Реплаи ставят под посты" : "Чужие фразы выворачивают";
+  if (phase === "reveal") return kind === "thread" ? "Смотрим, что с чем смешалось" : "Смотрим, что получилось";
+  if (phase === "vote") return kind === "thread" ? "Лайки за реплаи под постами" : "Голос за самый стыдный вариант";
   if (phase === "scores") return "Очки этого раунда";
   if (phase === "done") return "Партия закрыта";
   return "Лобби";

@@ -71,9 +71,15 @@ export function benchScores(input: {
       return [{ round: 0, voterId: ids[voter], seat }];
     }),
   };
-  return scoreRound(state).map((event) => ({
+  const scored = scoreRound(state).map((event) => ({
     name: state.players.find((player) => player.id === event.playerId)?.name ?? event.playerId,
     delta: event.delta,
     reason: event.reason,
   }));
+  const merged = new Map<string, BenchScore>();
+  for (const score of scored) {
+    const previous = merged.get(score.name);
+    merged.set(score.name, previous ? { name: score.name, delta: previous.delta + score.delta, reason: `${previous.reason}, ${score.reason}` } : score);
+  }
+  return [...merged.values()];
 }

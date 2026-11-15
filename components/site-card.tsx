@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { handleOf, roundTitle } from "@/lib/game/content";
+import { useState, type ReactNode } from "react";
+import { handleOf, hashString, PALETTE, roundTitle } from "@/lib/game/content";
 import type { Photo, RoundKind } from "@/lib/game/types";
 
 export type StageProps = {
@@ -11,16 +11,19 @@ export type StageProps = {
   twist?: string;
   photo?: Photo | null;
   author?: string;
+  poster?: string;
+  likes?: number;
   topic?: string;
   compact?: boolean;
 };
 
 export function SiteCard(props: StageProps) {
   const body = renderKind(props);
-  if (props.compact) return <div className="overflow-hidden rounded-2xl bg-white text-black">{body}</div>;
+  const canvas = props.kind === "thread" ? "bg-[#14120f]" : "bg-white text-black";
+  if (props.compact) return <div className={`overflow-hidden rounded-2xl ${canvas}`}>{body}</div>;
   return (
     <div className="mx-auto w-[min(440px,94vw)] rounded-[2.2rem] border-8 border-[#1c1c1e] bg-black shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
-      <div className="overflow-hidden rounded-[1.55rem] bg-white text-black">{body}</div>
+      <div className={`overflow-hidden rounded-[1.55rem] ${canvas}`}>{body}</div>
     </div>
   );
 }
@@ -63,29 +66,121 @@ function Messenger({ mode, write, twist, author, compact }: StageProps) {
   );
 }
 
-function ThreadCard({ mode, write, twist, author, compact }: StageProps) {
-  const tag = twist ? (twist.startsWith("#") ? twist : `#${twist.replace(/\s+/g, "")}`) : "#…";
+function ThreadCard({ mode, write, twist, author, poster, likes, compact }: StageProps) {
+  const showing = mode === "show";
+  const posterName = poster || "лента";
+  const replyName = author || "Игрок";
+  const postText = showing ? twist || "Пост" : "";
+  const size = compact ? "size-8" : "size-10";
   return (
-    <article className={`bg-[#f7f4ef] text-[#1c1916] ${compact ? "p-3" : "p-5"}`}>
-      <div className="mb-3 flex items-center justify-between">
-        <span className="text-[18px] font-semibold">Эхо</span>
-        <span className="text-[13px] text-[#1c1916]/45">Рядом</span>
-      </div>
+    <EchoShell compact={compact} tall={!compact}>
       <div className="flex gap-3">
-        <Avatar name={author || "?"} />
-        <div className="min-w-0 flex-1">
-          <div className="flex gap-2 text-[14px]">
-            <b>{author || "Игрок"}</b>
-            <span className="text-[#1c1916]/45">{handleOf(author || "user")}</span>
-          </div>
-          <p className="mt-1 text-[17px] leading-snug">{mode === "show" ? write : <Dots />}</p>
-          {mode === "show" ? <p className="mt-2 text-[16px] font-semibold text-[#9a4632]">{tag}</p> : null}
-          <div className="mt-4 flex justify-between text-[13px] text-[#1c1916]/45">
-            <span>↩ 12</span><span>↻ 48</span><span>♥ 320</span><span>↗</span>
-          </div>
+        <div className={`flex ${compact ? "w-8" : "w-10"} flex-col items-center`}>
+          <EchoAvatar name={posterName} className={size} />
+          <span className="mt-1 min-h-4 w-0.5 flex-1 rounded-full bg-[#f6f1ea]/20" />
+        </div>
+        <div className="min-w-0 flex-1 pb-3">
+          {showing ? <EchoName name={posterName} /> : null}
+          <p className={`mt-1 leading-snug ${compact ? "text-[15px]" : "text-[17px]"}`}>
+            {showing ? postText : <span className="text-[#f6f1ea]/55">Пост ещё пишут <Dots /></span>}
+          </p>
+          {showing ? <EchoBar text={postText} likes={likes} /> : null}
         </div>
       </div>
+      <div className="flex gap-3">
+        <div className={`flex ${compact ? "w-8" : "w-10"} justify-center`}>
+          <EchoAvatar name={showing ? replyName : "?"} className={size} />
+        </div>
+        <div className="min-w-0 flex-1">
+          {showing ? <EchoName name={replyName} /> : null}
+          {showing ? <p className="text-[13px] text-[#f6f1ea]/45">В ответ {handleOf(posterName)}</p> : null}
+          <p className={`mt-1 leading-snug ${compact ? "text-[15px]" : "text-[17px]"}`}>{showing ? write || "…" : <Dots />}</p>
+          {showing ? <p className={`mt-2 ${likes ? "text-[#9a4632]" : "text-[#f6f1ea]/45"}`}><HeartIcon /></p> : null}
+        </div>
+      </div>
+    </EchoShell>
+  );
+}
+
+export function EchoShell({ children, compact, tall }: { children: ReactNode; compact?: boolean; tall?: boolean }) {
+  return (
+    <article className={`bg-[#14120f] text-[#f6f1ea] ${compact ? "p-3" : "px-4 py-4"} ${tall ? "min-h-[480px]" : ""}`}>
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <span className={`font-semibold ${compact ? "text-[16px]" : "text-[18px]"}`}>Эхо</span>
+        <nav className="flex gap-3 text-[12px]">
+          <span className="border-b-2 border-[#9a4632] pb-0.5">Лента</span>
+          <span className="text-[#f6f1ea]/35">Рядом</span>
+          <span className="text-[#f6f1ea]/35">Ответы</span>
+        </nav>
+      </header>
+      {children}
     </article>
+  );
+}
+
+export function EchoAvatar({ name, className = "size-10" }: { name: string; className?: string }) {
+  const color = PALETTE[hashString(name) % PALETTE.length];
+  return (
+    <span className={`grid shrink-0 place-items-center rounded-full text-[13px] font-bold text-[#14120f] ${className}`} style={{ background: color }}>
+      {name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+export function EchoName({ name }: { name: string }) {
+  return (
+    <p className="truncate text-[14px] leading-tight">
+      <b>{name}</b> <span className="font-normal text-[#f6f1ea]/45">{handleOf(name)} · 2ч</span>
+    </p>
+  );
+}
+
+function EchoBar({ text, likes }: { text: string; likes?: number }) {
+  const replies = (hashString(text || "eho") % 17) + 1;
+  const reposts = (hashString(`${text}:repost`) % 8) + 1;
+  return (
+    <div className="mt-3 flex max-w-[260px] justify-between text-[13px] text-[#f6f1ea]/45">
+      <span className="inline-flex items-center gap-1"><ReplyIcon /> {replies}</span>
+      <span className="inline-flex items-center gap-1"><RepostIcon /> {reposts}</span>
+      <span className="inline-flex items-center gap-1" style={likes ? { color: "#9a4632" } : undefined}><HeartIcon /> {likes || ""}</span>
+      <ShareIcon />
+    </div>
+  );
+}
+
+function ReplyIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+      <path d="M6 4.5 3 7.5l3 3" />
+      <path d="M3.5 7.5h6.2a3.3 3.3 0 0 1 0 6.6H8" />
+    </svg>
+  );
+}
+
+function RepostIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+      <path d="M4 6h8l-2.2-2.2" />
+      <path d="M12 10H4l2.2 2.2" />
+    </svg>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4" fill="currentColor" aria-hidden>
+      <path d="M8 13.2 3.4 8.7a2.6 2.6 0 0 1 3.7-3.7L8 6.1l.9-1.1a2.6 2.6 0 0 1 3.7 3.7L8 13.2Z" />
+    </svg>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden>
+      <path d="M8 11.5V3.5" />
+      <path d="M5 6.2 8 3.2l3 3" />
+      <path d="M3.5 9.5v3h9v-3" />
+    </svg>
   );
 }
 
