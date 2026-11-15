@@ -1,34 +1,150 @@
-export const ROUND_KINDS = [
-  "messenger",
-  "thread",
-  "job",
-  "market",
-  "search",
-  "review",
-  "video",
-  "ai",
-  "instagram",
-] as const;
+export const MODES = ["ratio", "dms", "explain", "sabotage"] as const;
 
-export type RoundKind = (typeof ROUND_KINDS)[number];
+export type Mode = (typeof MODES)[number];
 
-export type Phase = "lobby" | "write" | "twist" | "reveal" | "vote" | "scores" | "done";
+export type Language = "en" | "ru";
 
-export type Photo = {
+export type Intensity = "casual" | "unhinged" | "footprint";
+
+export type Phase =
+  | "lobby"
+  | "generating"
+  | "round_intro"
+  | "writing"
+  | "reveal"
+  | "voting"
+  | "results"
+  | "leaderboard"
+  | "favorites"
+  | "game_over";
+
+export type Role = "reply" | "answer" | "context" | "fragment";
+
+export type GameConfig = {
+  language: Language;
+  intensity: Intensity;
+  exclusions: string;
+  rounds: number;
+  playlist: Mode[];
+  finaleMultiplier: boolean;
+  searchBudget: number;
+};
+
+export type ResolvedImage = {
   url: string;
   thumb: string;
   author: string;
   license: string;
-  page: string;
+  source: string;
 };
 
-export type Card = {
-  kind: RoundKind;
-  seat: number;
-  topic: string;
+export type ImageGroup = {
   query: string;
-  photos: Photo[] | null;
-  photoError: boolean;
+  images: ResolvedImage[];
+};
+
+export type AccountDraft = {
+  name: string;
+  handle: string;
+  verified: boolean;
+  avatarGroup: number;
+};
+
+export type FictionalAccount = AccountDraft & {
+  image: ResolvedImage | null;
+  color: string;
+};
+
+export type RatioPrompt = {
+  kind: "post";
+  account: number;
+  text: string;
+  fictionLikes: number;
+  fictionViews: number;
+  ago: string;
+};
+
+export type DmPrompt = {
+  kind: "question";
+  text: string;
+  sender: string;
+};
+
+export type ExplainPrompt = {
+  kind: "scenario";
+  text: string;
+};
+
+export type SabotagePrompt = {
+  kind: "template";
+  instructionA: string;
+  instructionB: string;
+  pattern: string;
+  fallbackA: string;
+  fallbackB: string;
+};
+
+export type Prompt = RatioPrompt | DmPrompt | ExplainPrompt | SabotagePrompt;
+
+export type SessionManifest = {
+  source: "model" | "backup";
+  imageGroups: ImageGroup[];
+  accounts: AccountDraft[];
+  prompts: Prompt[][];
+};
+
+export type Assignment = {
+  id: string;
+  round: number;
+  prompt: number;
+  playerId: string;
+  slot: number;
+  role: Role;
+};
+
+export type Submission = {
+  id: string;
+  assignmentId: string;
+  playerId: string;
+  text: string;
+  removed: boolean;
+  hidden: boolean;
+};
+
+export type Vote = {
+  round: number;
+  contest: string;
+  voterId: string;
+  entryId: string;
+};
+
+export type Favorite = {
+  voterId: string;
+  entryId: string;
+};
+
+export type ScoreEvent = {
+  round: number;
+  contest: string;
+  playerId: string;
+  delta: number;
+  reason: string;
+};
+
+export type BadgeKind =
+  | "ratioed"
+  | "bro_fell_off"
+  | "shared_brain_cell"
+  | "viral"
+  | "digital_footprint"
+  | "partners_in_crime"
+  | "chronically_online";
+
+export type Badge = {
+  kind: BadgeKind;
+  playerId: string;
+  round: number;
+  contest?: string;
 };
 
 export type Player = {
@@ -41,99 +157,96 @@ export type Player = {
   joinedAt: number;
 };
 
-export type Submission = {
-  round: number;
-  seat: number;
-  authorId: string;
-  text: string;
-  photo: number | null;
-};
-
-export type Twist = {
-  round: number;
-  seat: number;
-  twisterId: string;
-  text: string;
-};
-
-export type Vote = {
-  round: number;
-  voterId: string;
-  seat: number;
-};
-
-export type ScoreEvent = {
-  round: number;
-  playerId: string;
-  delta: number;
-  reason: string;
-};
-
 export type RoomState = {
   code: string;
   demo: boolean;
   cap: number;
   hostToken: string;
   match: number;
-  played: RoundKind[];
-  usedTopics: string[];
   createdAt: number;
   players: Player[];
   status: "lobby" | "playing" | "finished";
   phase: Phase;
+  config: GameConfig;
   round: number;
-  playlist: RoundKind[];
-  cards: Card[];
+  writeStep: number;
+  contest: number;
+  accounts: FictionalAccount[];
+  imageGroups: ImageGroup[];
+  prompts: Prompt[][];
+  assignments: Assignment[];
+  orders: number[][];
   submissions: Submission[];
-  twists: Twist[];
   votes: Vote[];
+  favorites: Favorite[];
   scores: Record<string, number>;
   log: ScoreEvent[];
-  reveal: number;
+  badges: Badge[];
+  scored: string[];
   deadline: number | null;
   seats: string[];
-  deckLock: number | null;
+  seed: number;
+  generationLock: number | null;
+  generationToken: string | null;
   promptSource: "model" | "backup" | null;
   debug: boolean;
   paused: boolean;
   pauseRemaining: number | null;
 };
 
-export type ShownCard = {
-  seat: number;
-  kind: RoundKind;
-  authorName: string;
-  authorColor: string;
-  twisterName: string;
-  write: string;
-  twist: string;
-  photo: Photo | null;
-  topic: string;
-  votable: boolean;
-  votes: number;
+export type PlayerTask = {
+  assignmentId: string;
+  role: Role;
+  max: number;
+  title: string;
+  prompt: string;
+  aside: string;
+  placeholder: string;
 };
 
-export type PlayerTask =
-  | {
-      phase: "write";
-      kind: RoundKind;
-      topic: string;
-      photos: Photo[];
-      max: number;
-    }
-  | {
-      phase: "twist";
-      kind: RoundKind;
-      hint: string;
-      sourceText: string;
-      sourceName: string;
-      photo: Photo | null;
-      max: number;
-    }
-  | {
-      phase: "vote";
-      options: Array<ShownCard & { mine: boolean; selected: boolean }>;
-    };
+export type FeedAccount = {
+  name: string;
+  handle: string;
+  verified: boolean;
+  initials: string;
+  color: string;
+  image: string | null;
+  license: string;
+  author: string;
+};
+
+export type FeedCard = {
+  id: string;
+  mode: Mode;
+  round: number;
+  prompt: number;
+  account: FeedAccount | null;
+  fictionLikes: number;
+  fictionViews: number;
+  ago: string;
+  promptText: string;
+  questionRevealed: boolean;
+  sender: string;
+  combined: string;
+  textA: string;
+  textB: string;
+  authorA: string;
+  authorB: string;
+  colorA: string;
+  colorB: string;
+  showAuthors: boolean;
+  votesA: number;
+  votesB: number;
+  likesA: number;
+  likesB: number;
+  skipped: boolean;
+  entryA: string;
+  entryB: string;
+  votable: boolean;
+  submissionA: string | null;
+  submissionB: string | null;
+  favoriteVotes: number;
+};
 
 export type ClientView = {
   version: number;
@@ -142,30 +255,46 @@ export type ClientView = {
   demo: boolean;
   cap: number;
   match: number;
-  played: RoundKind[];
   status: RoomState["status"];
   phase: Phase;
   round: number;
   roundCount: number;
-  kind: RoundKind | null;
-  playlist: RoundKind[];
+  mode: Mode | null;
+  writeStep: number;
+  contest: number;
+  contestCount: number;
+  playlist: Mode[];
+  config: GameConfig;
   deadline: number | null;
   debug: boolean;
   paused: boolean;
   pauseRemaining: number | null;
   players: Array<{ id: string; name: string; color: string; bot: boolean; host: boolean; score: number }>;
-  seatsReady: string[];
-  deck: { ready: boolean; done: number; total: number; label: string; source: RoomState["promptSource"] };
-  spotlight: ShownCard | null;
-  ballot: ShownCard[];
-  scoreboard: Array<{ id: string; name: string; color: string; total: number; delta: number; reason: string }>;
+  readyIds: string[];
+  stepTotal: number;
+  generation: { source: RoomState["promptSource"] };
+  spotlight: FeedCard | null;
+  board: FeedCard[];
+  gallery: FeedCard[];
+  scoreboard: Array<{
+    id: string;
+    name: string;
+    color: string;
+    total: number;
+    delta: number;
+    reason: string;
+    badges: BadgeKind[];
+  }>;
+  badges: Badge[];
   winners: string[];
   you: {
     id: string;
     name: string;
     host: boolean;
-    seat: number;
-    task: PlayerTask | null;
+    tasks: PlayerTask[];
+    choices: string[];
+    votedEntry: string | null;
+    favorite: string | null;
   } | null;
   isHost: boolean;
   joinPath: string;

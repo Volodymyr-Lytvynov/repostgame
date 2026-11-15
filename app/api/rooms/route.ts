@@ -5,10 +5,11 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { cap?: number; demo?: boolean };
+    const body = (await request.json().catch(() => ({}))) as { cap?: number; demo?: boolean; language?: "en" | "ru" };
     const created = await createRoom({
-      cap: Number(body.cap ?? 5),
+      cap: Number(body.cap ?? 6),
       demo: Boolean(body.demo),
+      language: body.language,
     });
     return Response.json(created);
   } catch (error) {
@@ -19,5 +20,5 @@ export async function POST(request: Request) {
 function fail(error: unknown) {
   if (error instanceof GameError) return Response.json({ error: error.message }, { status: 400 });
   console.error(error);
-  return Response.json({ error: "Не вышло создать комнату" }, { status: 500 });
+  return Response.json({ error: "Couldn't create a room" }, { status: 500 });
 }

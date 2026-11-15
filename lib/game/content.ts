@@ -1,304 +1,364 @@
-import type { RoundKind } from "./types";
+import type { GameConfig, Intensity, Language, Mode, Role } from "./types";
 
-export const PALETTE = [
-  "#ff5a36",
-  "#3dd68c",
-  "#ffc53d",
-  "#7aa2ff",
-  "#f26db5",
-  "#c084fc",
-  "#2ee6d6",
-  "#f97316",
+export const PALETTE = ["#ff5a36", "#3dd68c", "#ffc53d", "#7aa2ff", "#f26db5", "#c084fc", "#2ee6d6", "#f97316"];
+
+export const IMAGE_QUERIES = [
+  "deep fried animal meme avatars",
+  "funny medieval painting portraits",
+  "cursed reaction meme avatars",
+  "vintage animal illustrations",
+  "pixel art fictional character avatars",
+  "generic illustrated icons",
 ];
 
-export const APP_NAME: Record<RoundKind, string> = {
-  messenger: "Весточка",
-  thread: "Эхо",
-  job: "Смена",
-  market: "Лавка",
-  search: "Находка",
-  review: "Метка",
-  video: "Показ",
-  ai: "Подсказка",
-  instagram: "Витрина",
+const INTENSITY_ORDER: Record<Intensity, Intensity[]> = {
+  casual: ["casual", "unhinged", "footprint"],
+  unhinged: ["unhinged", "footprint", "casual"],
+  footprint: ["footprint", "unhinged", "casual"],
 };
 
-export function roundTitle(kind: RoundKind): string {
-  return APP_NAME[kind];
-}
+type Line = { intensity: Intensity; text: string };
 
-export function limits(kind: RoundKind): { write: number; twist: number } {
-  if (kind === "ai") return { write: 140, twist: 90 };
-  if (kind === "thread") return { write: 140, twist: 140 };
-  if (kind === "review") return { write: 110, twist: 36 };
-  if (kind === "instagram") return { write: 8, twist: 80 };
-  if (kind === "video") return { write: 90, twist: 48 };
-  if (kind === "messenger") return { write: 80, twist: 28 };
-  return { write: 90, twist: 42 };
-}
+type TemplateLine = {
+  intensity: Intensity;
+  instructionA: string;
+  instructionB: string;
+  pattern: string;
+  fallbackA: string;
+  fallbackB: string;
+};
 
-export function writeCopy(kind: RoundKind, topic: string): { title: string; hint: string; placeholder: string } {
-  const hint = topic;
-  switch (kind) {
-    case "messenger":
-      return { title: "Напиши сообщение", hint, placeholder: "Я уже выехал" };
-    case "thread":
-      return { title: "Допиши реплай", hint, placeholder: "Я там был, это не так" };
-    case "job":
-      return { title: "Строка в сопроводительное", hint, placeholder: "Люблю работать с людьми" };
-    case "market":
-      return { title: "Честно опиши товар", hint, placeholder: "Работает, если ударить" };
-    case "search":
-      return { title: "Фраза как ответ поиска", hint, placeholder: "Это нормально после тридцати" };
-    case "review":
-      return { title: "Напиши отзыв", hint, placeholder: "Пришли голодные, ушли с историей" };
-    case "video":
-      return { title: "Комментарий под роликом", hint, placeholder: "Кто ещё так делает" };
-    case "ai":
-      return { title: "Ответь как нейросеть", hint, placeholder: "Конечно. Начните с извинения." };
-    default:
-      return { title: "Выбери кадр", hint, placeholder: "" };
-  }
-}
+type AccountLine = { name: string; handle: string; verified: boolean };
 
-export function twistCopy(kind: RoundKind): { title: string; placeholder: string } {
-  switch (kind) {
-    case "messenger":
-      return { title: "Кому это отправили?", placeholder: "Маме" };
-    case "thread":
-      return { title: "Под какой пост это поставить?", placeholder: "Я больше не пью. С понедельника." };
-    case "job":
-      return { title: "На какую должность это подали?", placeholder: "смотритель очереди" };
-    case "market":
-      return { title: "Что за товар и почём?", placeholder: "Диван, 400 грн" };
-    case "search":
-      return { title: "Какой это был запрос?", placeholder: "как уснуть за 4 минуты" };
-    case "review":
-      return { title: "Как называется место?", placeholder: "Столовая на работе" };
-    case "video":
-      return { title: "Как называется ролик?", placeholder: "Как сложить простынь" };
-    case "ai":
-      return { title: "Что написал пользователь?", placeholder: "Как сказать маме про гуся" };
-    default:
-      return { title: "Подпись к фото", placeholder: "семейный ужин, всё в порядке" };
-  }
-}
-
-type Pair = { write: string; twist: string };
-type Topic = { topic: string; query: string };
-
-const BOTS: Record<RoundKind, Pair[]> = {
-  messenger: [
-    { write: "Я уже выехал", twist: "Маме" },
-    { write: "Это был последний раз", twist: "Начальнику" },
-    { write: "Не пиши сюда", twist: "В чат дома" },
-    { write: "Я случайно", twist: "Бухгалтеру" },
-    { write: "Можешь забрать это у меня", twist: "Соседу снизу" },
-    { write: "Давай как в прошлый раз", twist: "В рабочий чат" },
+const ACCOUNTS: Record<Language, AccountLine[]> = {
+  en: [
+    { name: "weaponized unemployment", handle: "government_problem", verified: false },
+    { name: "Susan", handle: "blessed.susan", verified: false },
+    { name: "Human Resources", handle: "weareafamily", verified: true },
+    { name: "Kevin.exe", handle: "kevin.exe", verified: false },
+    { name: "unemployed philosopher", handle: "industrial.revolution.hater", verified: false },
+    { name: "Capitalism Enjoyer", handle: "monetizeeverything", verified: false },
+    { name: "Michael", handle: "passiveincome_mike", verified: false },
+    { name: "Testosterone Daily", handle: "primalmale", verified: false },
+    { name: "Emily", handle: "healing.with.emily", verified: false },
+    { name: "Peaceful Departures", handle: "peacefuldepartures", verified: true },
+    { name: "Sunday Service HQ", handle: "sundayservicehq", verified: true },
+    { name: "divorced at birth", handle: "emotional_liability", verified: false },
+    { name: "Side Effects Inc.", handle: "sideeffectsenjoyer", verified: true },
+    { name: "Andrew Capital", handle: "escapedthematrix", verified: true },
+    { name: "industrial grade disappointment", handle: "sexual_taxpayer", verified: false },
+    { name: "Notes App Menace", handle: "drafts.and.threats", verified: false },
   ],
-  thread: [
-    { write: "Я там был, это не так", twist: "Объявление на двери подъезда" },
-    { write: "Удали, пока мама не увидела", twist: "Письмо всему офису" },
-    { write: "Можно чуть больше подробностей", twist: "Статус в три ночи" },
-    { write: "Я так и знал", twist: "Комментарий под рецептом" },
-    { write: "Это точно не про меня", twist: "Сообщение в чат родителей" },
-    { write: "Сохрани, потом пригодится", twist: "Открытка коллеге" },
-  ],
-  job: [
-    { write: "Быстро учусь на своих ошибках", twist: "дегустатор просрочки" },
-    { write: "Люблю работать с людьми", twist: "смотритель ночной очереди" },
-    { write: "Готов выходить в выходные", twist: "голос «мы уже закрываемся»" },
-    { write: "Стрессоустойчивый", twist: "оператор чата «где мой заказ»" },
-    { write: "Есть опыт с животными", twist: "няня для чужого гуся" },
-    { write: "Коммуникабельный", twist: "тот, кто пишет «+» в чате подъезда" },
-  ],
-  market: [
-    { write: "Пахнет, но характер добрый", twist: "Диван, 400 грн" },
-    { write: "Работает, если ударить", twist: "Микроволновка, 150 грн" },
-    { write: "Один хозяин, очень активный", twist: "Пылесос, 90 грн" },
-    { write: "Почти не кусается", twist: "Блендер, 60 грн" },
-    { write: "Следы праздника в комплекте", twist: "Стол, 200 грн" },
-    { write: "Сама не знает, что умеет", twist: "Колонка, 1 грн" },
-  ],
-  search: [
-    { write: "Врачи просят не повторять дома", twist: "как уснуть за 4 минуты" },
-    { write: "Это нормально после тридцати", twist: "почему начальник молчит" },
-    { write: "Шаг 3: сделайте вид, что так и было", twist: "как объяснить пропажу торта" },
-    { write: "Побочный эффект: внезапная честность", twist: "можно ли уволиться утром" },
-    { write: "Не является медицинской рекомендацией", twist: "что значит сердечко от коллеги" },
-    { write: "Результат может отличаться от обещания", twist: "как вернуть переписку" },
-  ],
-  review: [
-    { write: "Пришли голодные, ушли с историей", twist: "Столовая на работе" },
-    { write: "Музыка громче, чем еда", twist: "Свадьба двоюродной" },
-    { write: "Персонал смотрит, как будто уже знает", twist: "Поликлиника №4" },
-    { write: "Чисто, пока не включили свет", twist: "Квартира посуточно" },
-    { write: "Порции честные: маленькие", twist: "Кафе у метро" },
-    { write: "Больше не пустят, и это взаимно", twist: "Баня на районе" },
-  ],
-  video: [
-    { write: "Кто ещё так делает или я один", twist: "Как сложить простынь" },
-    { write: "Попробовал, бабушка в шоке", twist: "Тихий час в садике" },
-    { write: "Жду вторую часть", twist: "Собрание жильцов, 2 часа" },
-    { write: "Это законно?", twist: "Рецепт оливье" },
-    { write: "Сохранил, чтобы не забыть", twist: "Инструкция к огнетушителю" },
-    { write: "Почему это рекомендовали мне", twist: "Звуки пылесоса 10 часов" },
-  ],
-  ai: [
-    { write: "Конечно. Начните с извинения и не уточняйте детали.", twist: "Как сказать маме, что гусь до сих пор у меня" },
-    { write: "Я не могу помочь с этим. Могу предложить лазанью.", twist: "Начальник снова просит выйти в субботу" },
-    { write: "Вот план. Шаг два — удалить переписку.", twist: "Что ответить на «мы всё видели»" },
-    { write: "Сохраняйте спокойствие и чек.", twist: "В такси остался торт" },
-    { write: "Как языковая модель, я считаю это семейной традицией.", twist: "Можно ли прийти на свадьбу с барабаном" },
-    { write: "Лучший вариант: скажите, что так и было задумано.", twist: "Почему в холодильнике чужая обувь" },
-  ],
-  instagram: [
-    { write: "", twist: "семейный ужин, всё в порядке" },
-    { write: "", twist: "новый сотрудник отдела" },
-    { write: "", twist: "маленький сюрприз для гостей" },
-    { write: "", twist: "утро начальника" },
-    { write: "", twist: "это временно" },
-    { write: "", twist: "так выглядит забота" },
+  ru: [
+    { name: "вооружённая безработица", handle: "gosproblema", verified: false },
+    { name: "Светлана", handle: "blagoslovenna", verified: false },
+    { name: "Отдел кадров", handle: "myodnasemya", verified: true },
+    { name: "Кевин.exe", handle: "kevin.exe", verified: false },
+    { name: "безработный философ", handle: "protiv.progressa", verified: false },
+    { name: "Любитель рынка", handle: "monetiziruy", verified: false },
+    { name: "Михаил", handle: "passivny_misha", verified: false },
+    { name: "Тестостерон Daily", handle: "samets", verified: false },
+    { name: "Эля", handle: "ischislyayus", verified: false },
+    { name: "Тихий Уход", handle: "tihiyuhod", verified: true },
+    { name: "Воскресная штаб", handle: "voskresenye", verified: true },
+    { name: "разведён при рождении", handle: "emotsionalny_dolg", verified: false },
+    { name: "Побочный эффект", handle: "pobochno", verified: true },
+    { name: "Андрей Капитал", handle: "vyshel.iz.matrix", verified: true },
+    { name: "промышленное разочарование", handle: "nalogovyy_kot", verified: false },
+    { name: "Заметки в 4 утра", handle: "chernovik.ugroz", verified: false },
   ],
 };
 
-const TOPICS: Record<RoundKind, Topic[]> = {
-  messenger: [
-    { topic: "Напиши, что задерживаешься", query: "" },
-    { topic: "Коротко объясни, куда делся торт", query: "" },
-    { topic: "Ответь на «ты где?»", query: "" },
-    { topic: "Сообщи, что планы чуть изменились", query: "" },
-    { topic: "Попроси забрать посылку", query: "" },
-    { topic: "Напиши, что уже почти на месте", query: "" },
-    { topic: "Успокой человека одним сообщением", query: "" },
-    { topic: "Признайся, что забыл про встречу", query: "" },
+const POSTS: Record<Language, Line[]> = {
+  en: [
+    { intensity: "casual", text: "At 24 I bought a house. No degree. No job. The listing was my uncle's garage." },
+    { intensity: "casual", text: "We're excited to announce that bereavement leave is now a team sport." },
+    { intensity: "casual", text: "My son is 34 and still single. Starting to think the group chat is the problem." },
+    { intensity: "casual", text: "Finally cut every toxic person out of my life. The chat is quieter. It is also just me." },
+    { intensity: "casual", text: "People used to build cathedrals. Now they ask if oat milk counts as a personality." },
+    { intensity: "casual", text: "If your grandma's pension isn't a side hustle, that's a family meeting." },
+    { intensity: "casual", text: "Black Friday starts tomorrow. The good plots go first." },
+    { intensity: "casual", text: "Just found out my therapist mains support. The silence makes sense now." },
+    { intensity: "unhinged", text: "does anyone else feel a little romantic about a rent-controlled apartment" },
+    { intensity: "unhinged", text: "being someone's emergency contact while actively ruining their life is a career" },
+    { intensity: "unhinged", text: "The tenant moved out permanently. Heavy day. The listing goes up Thursday." },
+    { intensity: "unhinged", text: "We are no longer accepting walk-ins. Demand is up and so is the waitlist for staying." },
+    { intensity: "unhinged", text: "I don't want another one who shows up once and then leaves the chat on read." },
+    { intensity: "unhinged", text: "Court-ordered healing journey starts Monday. Bring a snack." },
+    { intensity: "unhinged", text: "The loyalty program is for people who come back, including the ones who already left." },
+    { intensity: "unhinged", text: "If the pills worked you wouldn't still be writing in. That's the model, babe." },
+    { intensity: "footprint", text: "Tomorrow is the service. Can the photographer also shoot profile pictures while everyone is dressed." },
+    { intensity: "footprint", text: "Sometimes the most toxic person you know is the one you listed as a reference." },
+    { intensity: "footprint", text: "We remain committed to a free admission. The rest is a seasonal pass." },
+    { intensity: "footprint", text: "Choosing yourself is healthy. Especially in the daycare parking lot." },
+    { intensity: "footprint", text: "Due to demand, grief is now appointment only." },
+    { intensity: "footprint", text: "She's saved in my phone as Early Access. The wedding can be the full release." },
+    { intensity: "footprint", text: "HR noticed your ex is still your professional reference. We find that efficient." },
+    { intensity: "footprint", text: "The charity battle pass was a soft launch. Season 2 promises to listen." },
   ],
-  thread: [
-    { topic: "Я больше не пью. С понедельника.", query: "" },
-    { topic: "Это был последний раз, честно", query: "" },
-    { topic: "Маме лучше не знать, но", query: "" },
-    { topic: "Мы просто коллеги", query: "" },
-    { topic: "Я случайно ответил не в тот чат", query: "" },
-    { topic: "Завтра всем всё объясню", query: "" },
-    { topic: "Он сам первый написал", query: "" },
-    { topic: "Никому не говорите, что я", query: "" },
-  ],
-  job: [
-    { topic: "Одна сильная сторона, без скромности", query: "" },
-    { topic: "Почему именно ты", query: "" },
-    { topic: "Как относишься к переработкам", query: "" },
-    { topic: "Опыт, которым можно гордиться", query: "" },
-    { topic: "Что сделаешь в первый день", query: "" },
-    { topic: "Любимый формат общения на работе", query: "" },
-    { topic: "Как переживаешь дедлайн", query: "" },
-    { topic: "Чему научила прошлая работа", query: "" },
-  ],
-  market: [
-    { topic: "Опиши диван так, чтобы его забрали", query: "" },
-    { topic: "Продай технику, которая капризничает", query: "" },
-    { topic: "Честно напиши про запах", query: "" },
-    { topic: "Состояние: б/у, но с историей", query: "" },
-    { topic: "Почему отдаёшь почти даром", query: "" },
-    { topic: "Что входит в комплект, кроме самого предмета", query: "" },
-    { topic: "Для кого эта вещь точно подойдёт", query: "" },
-    { topic: "Один недостаток, который лучше сказать сразу", query: "" },
-  ],
-  search: [
-    { topic: "Короткий ответ, который хочется закрыть", query: "" },
-    { topic: "Совет, звучащий увереннее, чем нужно", query: "" },
-    { topic: "Инструкция из трёх слов и оговорки", query: "" },
-    { topic: "Факт, который лучше не проверять вслух", query: "" },
-    { topic: "Ответ «для чайников»", query: "" },
-    { topic: "То, что пишет первая ссылка", query: "" },
-    { topic: "Предупреждение мелким шрифтом", query: "" },
-    { topic: "Народный способ без гарантий", query: "" },
-  ],
-  review: [
-    { topic: "Отзыв про ужин, после которого все молчали", query: "" },
-    { topic: "Как тебя встретили на входе", query: "" },
-    { topic: "Что было не так с порцией", query: "" },
-    { topic: "Оцени атмосферу одним вздохом", query: "" },
-    { topic: "Вернёшься ли ещё и почему так", query: "" },
-    { topic: "Что сказал соседний стол", query: "" },
-    { topic: "Чистота: честно", query: "" },
-    { topic: "Совет тем, кто только собирается", query: "" },
-  ],
-  video: [
-    { topic: "Комментарий человека, который досмотрел до конца", query: "" },
-    { topic: "Вопрос автору, который всё усложнит", query: "" },
-    { topic: "Отметь таймкод, где стало неловко", query: "" },
-    { topic: "Напиши, зачем это сохранил", query: "" },
-    { topic: "Сравни с прошлой серией", query: "" },
-    { topic: "Коротко поспорь с роликом", query: "" },
-    { topic: "Посоветуй, кому это переслать", query: "" },
-    { topic: "Оставь комментарий от лица бабушки", query: "" },
-  ],
-  ai: [
-    { topic: "Дай совет, как провести вечер", query: "" },
-    { topic: "Вежливо откажи и предложи замену", query: "" },
-    { topic: "Составь план из трёх шагов", query: "" },
-    { topic: "Объясни, как извиниться", query: "" },
-    { topic: "Ответь спокойно и слишком уверенно", query: "" },
-    { topic: "Предложи безопасный вариант", query: "" },
-    { topic: "Перефразируй плохую новость мягко", query: "" },
-    { topic: "Дай инструкцию, как ничего не объяснять", query: "" },
-  ],
-  instagram: [
-    { topic: "Это всплыло в семейном чате", query: "messy family dinner table" },
-    { topic: "Последнее фото в телефоне", query: "cat sleeping on laptop" },
-    { topic: "Кадр, который открылся на проекторе", query: "office meeting projector screen" },
-    { topic: "То, что увидели гости на кухне", query: "burnt food smoke kitchen" },
-    { topic: "Снимок с корпоратива", query: "office party balloons cake" },
-    { topic: "Фото из такси в три ночи", query: "empty taxi back seat night" },
-    { topic: "Объявление, которое повесили соседи", query: "apartment hallway shoes" },
-    { topic: "Кадр из отпуска, который лучше не показывать", query: "tourist raincoat beach wind" },
-    { topic: "То, что лежало в корзине", query: "shopping cart strange groceries" },
-    { topic: "Утро перед важной встречей", query: "coffee spilled on shirt" },
-    { topic: "Подарок, который уже нельзя вернуть", query: "ugly ceramic souvenir" },
-    { topic: "Вид из окна ровно в этот момент", query: "rainy bus window city" },
+  ru: [
+    { intensity: "casual", text: "В 24 купил квартиру. Без диплома. Без работы. Это гараж дяди, но объявление звучало гордо." },
+    { intensity: "casual", text: "Рады сообщить, что отпуск по утрате теперь командный вид спорта." },
+    { intensity: "casual", text: "Сыну 34, и он всё ещё один. Начинаю думать, что проблема в семейном чате." },
+    { intensity: "casual", text: "Вычеркнула всех токсичных. В чате теперь тихо. Там только я." },
+    { intensity: "casual", text: "Раньше люди строили соборы. Теперь спрашивают, считается ли овсяное молоко характером." },
+    { intensity: "casual", text: "Если пенсия бабушки не приносит доход, это повод для семейного собрания." },
+    { intensity: "casual", text: "Чёрная пятница завтра. Хорошие места заканчиваются раньше людей." },
+    { intensity: "casual", text: "Узнал, что терапевт играет саппортом. Теперь понятно, почему он молчит." },
+    { intensity: "unhinged", text: "кто-нибудь ещё испытывает чувства к квартире с нормальной арендой" },
+    { intensity: "unhinged", text: "быть чьим-то экстренным контактом и одновременно причиной ЧП — это уже профессия" },
+    { intensity: "unhinged", text: "Жилец съехал окончательно. Тяжёлый день, зато объявление выложу в четверг." },
+    { intensity: "unhinged", text: "Мы больше не принимаем без записи. Спрос вырос, и очередь тоже хочет остаться." },
+    { intensity: "unhinged", text: "Не хочу ещё одного, кто появляется один раз и пропадает из чата." },
+    { intensity: "unhinged", text: "Суд велел начать путь исцеления с понедельника. Возьмите перекус." },
+    { intensity: "unhinged", text: "Программа лояльности для тех, кто возвращается. Включая тех, кто уже ушёл." },
+    { intensity: "unhinged", text: "Если бы таблетки работали, вы бы сюда не писали. Это и есть модель, дорогой." },
+    { intensity: "footprint", text: "Завтра проводы. Фотограф может заодно снять фото для профиля, пока все при параде." },
+    { intensity: "footprint", text: "Иногда самый токсичный человек — тот, кого ты указал рекомендателем." },
+    { intensity: "footprint", text: "Мы по-прежнему за бесплатный вход. Дальше уже сезонный пропуск." },
+    { intensity: "footprint", text: "Выбирать себя нормально. Особенно на парковке у садика." },
+    { intensity: "footprint", text: "Из-за спроса горе теперь только по записи." },
+    { intensity: "footprint", text: "В контактах она записана как «ранний доступ». Свадьба будет полной версией." },
+    { intensity: "footprint", text: "Кадры заметили, что бывшая всё ещё ваш рекомендатель. Мы считаем это эффективным." },
+    { intensity: "footprint", text: "Боевой пропуск благотворительности был мягким запуском. Второй сезон обещает слушать." },
   ],
 };
 
-export function hashString(value: string): number {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  return hash;
-}
+const QUESTIONS: Record<Language, Line[]> = {
+  en: [
+    { intensity: "casual", text: "Why do you watch cooking videos?" },
+    { intensity: "casual", text: "Why haven't you cancelled that subscription?" },
+    { intensity: "casual", text: "What do you like about IKEA?" },
+    { intensity: "casual", text: "Why do you take the bus?" },
+    { intensity: "unhinged", text: "Why were you in incognito mode?" },
+    { intensity: "unhinged", text: "How do you pick a hotel?" },
+    { intensity: "unhinged", text: "Why did you go to the cinema alone?" },
+    { intensity: "unhinged", text: "What were you doing with the credit card?" },
+    { intensity: "footprint", text: "Why was your location on at 3am?" },
+    { intensity: "footprint", text: "Who was the plus-one?" },
+    { intensity: "footprint", text: "Why does HR have this screenshot?" },
+    { intensity: "footprint", text: "What should we tell your mother?" },
+  ],
+  ru: [
+    { intensity: "casual", text: "Зачем ты смотришь видео с готовкой?" },
+    { intensity: "casual", text: "Почему ты до сих пор не отменил подписку?" },
+    { intensity: "casual", text: "Что тебе нравится в IKEA?" },
+    { intensity: "casual", text: "Почему ты ездишь на автобусе?" },
+    { intensity: "unhinged", text: "Зачем ты сидел в режиме инкогнито?" },
+    { intensity: "unhinged", text: "Как ты выбираешь отель?" },
+    { intensity: "unhinged", text: "Зачем ты пошёл в кино один?" },
+    { intensity: "unhinged", text: "Что ты делал с кредитной картой?" },
+    { intensity: "footprint", text: "Почему в три ночи была включена геолокация?" },
+    { intensity: "footprint", text: "Кто был тем самым плюс один?" },
+    { intensity: "footprint", text: "Откуда у кадров этот скриншот?" },
+    { intensity: "footprint", text: "Что нам сказать твоей маме?" },
+  ],
+};
 
-export function fallbackTopic(kind: RoundKind, code: string, seat: number, shift = 0): Topic {
-  const list = TOPICS[kind];
-  return list[(hashString(`${code}:${kind}`) + seat + shift) % list.length];
-}
+const SENDERS: Record<Language, string[]> = {
+  en: ["Mom", "Dad", "Therapist", "Landlord", "HR", "Ex", "Priest", "Customer support", "Tinder match", "Building chat"],
+  ru: ["Мама", "Папа", "Терапевт", "Арендодатель", "Кадры", "Бывшая", "Священник", "Поддержка", "Пара с сайта", "Чат подъезда"],
+};
 
-export function botWrite(kind: RoundKind, seat: number, round: number): string {
-  const list = BOTS[kind];
-  return list[(seat + round) % list.length].write;
-}
+const SCENARIOS: Record<Language, Line[]> = {
+  en: [
+    { intensity: "casual", text: "Your manager asks why your out-of-office says 'spiritually unavailable'." },
+    { intensity: "casual", text: "The group chat wants to know why you left the dinner at 8 and the tab at 8:05." },
+    { intensity: "casual", text: "A client asks why the invoice is titled 'emotional labor, net 30'." },
+    { intensity: "casual", text: "Explain the calendar invite named 'quick alignment' that lasted four hours." },
+    { intensity: "unhinged", text: "HR: we've noticed you listed your ex as a professional reference. Explain." },
+    { intensity: "unhinged", text: "Your girlfriend found herself saved in your phone as Early Access. Explain." },
+    { intensity: "unhinged", text: "The office wants a statement on the energy-drink graveyard that is your desk." },
+    { intensity: "unhinged", text: "Write the official statement: the local shelter launched a battle pass." },
+    { intensity: "footprint", text: "Police-interview parody: why was the shared calendar titled 'alibi (draft)'?" },
+    { intensity: "footprint", text: "Customer service: a receipt shows one candle, three locks, and a lawyer. Explain the order." },
+    { intensity: "footprint", text: "Write the apology for a loyalty program aimed at people who keep coming back to the chapel." },
+    { intensity: "footprint", text: "Your therapist forwarded your 'quick question' to the group practice. Explain the question." },
+  ],
+  ru: [
+    { intensity: "casual", text: "Начальник спрашивает, почему в автоответчике написано «духовно недоступен»." },
+    { intensity: "casual", text: "Чат хочет знать, почему ты ушёл с ужина в восемь, а со счётом в 8:05." },
+    { intensity: "casual", text: "Клиент спрашивает, почему счёт называется «эмоциональный труд, 30 дней»." },
+    { intensity: "casual", text: "Объясни встречу «быстро синкнуться», которая длилась четыре часа." },
+    { intensity: "unhinged", text: "Кадры: вы указали бывшую как рекомендателя. Объяснитесь." },
+    { intensity: "unhinged", text: "Она нашла себя в телефоне под именем «ранний доступ». Объяснись." },
+    { intensity: "unhinged", text: "Офис ждёт заявление про кладбище энергетиков на твоём столе." },
+    { intensity: "unhinged", text: "Официальное заявление: местный приют запустил боевой пропуск." },
+    { intensity: "footprint", text: "Пародия на допрос: почему общий календарь назывался «алиби (черновик)»?" },
+    { intensity: "footprint", text: "Поддержка: в чеке свеча, три замка и юрист. Объясни заказ." },
+    { intensity: "footprint", text: "Напиши извинение за программу лояльности для тех, кто возвращается в часовню." },
+    { intensity: "footprint", text: "Терапевт переслал твой «быстрый вопрос» всей практике. Объясни вопрос." },
+  ],
+};
 
-export function botTwist(kind: RoundKind, sourceSeat: number, round: number): string {
-  const list = BOTS[kind];
-  return list[(sourceSeat + round) % list.length].twist;
-}
+const TEMPLATES: Record<Language, TemplateLine[]> = {
+  en: [
+    { intensity: "casual", instructionA: "Finish this thought in one line: The best things in life", instructionB: "Name a disappointing source of money", pattern: "{a} — {b}", fallbackA: "The best things in life take time", fallbackB: "a group-chat reimbursement" },
+    { intensity: "casual", instructionA: "Complete the advice: Never give up on", instructionB: "Name a job nobody thanks", pattern: "{a} — {b}", fallbackA: "Never give up on the people you love", fallbackB: "the person who restocks the office fruit" },
+    { intensity: "casual", instructionA: "Write a sincere dating-profile first line", instructionB: "Name a household chore", pattern: "{a} I also {b}.", fallbackA: "Looking for someone kind", fallbackB: "separate the recycling" },
+    { intensity: "casual", instructionA: "Write a headline for a local news story", instructionB: "Name a useless prize", pattern: "{a}. Prize: {b}.", fallbackA: "Local library extends its hours", fallbackB: "a mug that says employee" },
+    { intensity: "unhinged", instructionA: "Name a ridiculous luxury for the bedroom", instructionB: "Write a slogan for a funeral home", pattern: "Introducing {a}. {b}", fallbackA: "a nine-hundred-dollar weighted blanket", fallbackB: "Finally, a reason to stay in bed." },
+    { intensity: "unhinged", instructionA: "Write a corporate values statement in one line", instructionB: "Name something you hide from guests", pattern: "{a} Also: {b}.", fallbackA: "We believe in radical transparency", fallbackB: "the chair that isn't a chair" },
+    { intensity: "unhinged", instructionA: "Write the title of a self-help book", instructionB: "Name a bill you keep ignoring", pattern: "{a}, a memoir of {b}", fallbackA: "How to Choose Yourself", fallbackB: "the electricity" },
+    { intensity: "unhinged", instructionA: "Describe a first date in five words", instructionB: "Name a place that ruins the mood", pattern: "{a}. Location: {b}.", fallbackA: "We shared a quiet drink", fallbackB: "the parking garage stairwell" },
+    { intensity: "footprint", instructionA: "Write a wedding vow in one sentence", instructionB: "Name a subscription you forgot to cancel", pattern: "{a} Brought to you by {b}.", fallbackA: "I will stay even when it is boring", fallbackB: "a meditation app from 2019" },
+    { intensity: "footprint", instructionA: "Write an apology from a brand", instructionB: "Name a family secret", pattern: "{a} Unrelated: {b}.", fallbackA: "We hear you and we are learning", fallbackB: "the will is in the freezer" },
+    { intensity: "footprint", instructionA: "Invent a medical pamphlet title", instructionB: "Name a reason to leave town", pattern: "{a}. Side effect: {b}.", fallbackA: "Ask your doctor about rest", fallbackB: "your ex got the group chat" },
+    { intensity: "footprint", instructionA: "Write a toast for a retirement", instructionB: "Name something that should not be inherited", pattern: "{a} You also get {b}.", fallbackA: "You taught us how to leave on time", fallbackB: "the family lawsuit" },
+  ],
+  ru: [
+    { intensity: "casual", instructionA: "Закончи мысль одной строкой: Лучшее в жизни", instructionB: "Назови жалкий источник денег", pattern: "{a} — {b}", fallbackA: "Лучшее в жизни не торопят", fallbackB: "перевод из чата «кто сколько скидывается»" },
+    { intensity: "casual", instructionA: "Допиши совет: Никогда не бросай", instructionB: "Назови работу, за которую не благодарят", pattern: "{a} — {b}", fallbackA: "Никогда не бросай своих", fallbackB: "человек, который выносит коробки из-под бумаги" },
+    { intensity: "casual", instructionA: "Напиши первую строку анкеты для знакомств", instructionB: "Назови домашнюю обязанность", pattern: "{a} Ещё я умею: {b}.", fallbackA: "Ищу спокойного человека", fallbackB: "разбирать контейнеры" },
+    { intensity: "casual", instructionA: "Придумай заголовок местной новости", instructionB: "Назови бесполезный приз", pattern: "{a}. Приз: {b}.", fallbackA: "Библиотека продлила часы", fallbackB: "кружка со словом «сотрудник»" },
+    { intensity: "unhinged", instructionA: "Назови нелепую роскошь для спальни", instructionB: "Придумай слоган похоронного бюро", pattern: "Представляем {a}. {b}", fallbackA: "утяжелённое одеяло за кучу денег", fallbackB: "Наконец-то причина не вставать." },
+    { intensity: "unhinged", instructionA: "Напиши ценность компании одной строкой", instructionB: "Назови то, что прячешь от гостей", pattern: "{a} А ещё: {b}.", fallbackA: "Мы верим в радикальную честность", fallbackB: "стул, который не стул" },
+    { intensity: "unhinged", instructionA: "Придумай название книги по самопомощи", instructionB: "Назови счёт, который ты не открываешь", pattern: "{a}, мемуары про {b}", fallbackA: "Как выбрать себя", fallbackB: "электричество" },
+    { intensity: "unhinged", instructionA: "Опиши первое свидание в пяти словах", instructionB: "Назови место, которое убивает настроение", pattern: "{a}. Место: {b}.", fallbackA: "Мы просто тихо посидели", fallbackB: "лестница парковки" },
+    { intensity: "footprint", instructionA: "Напиши свадебную клятву одним предложением", instructionB: "Назови подписку, которую забыл отменить", pattern: "{a} При поддержке: {b}.", fallbackA: "Я останусь, даже когда будет скучно", fallbackB: "приложение для медитации из прошлого десятилетия" },
+    { intensity: "footprint", instructionA: "Напиши извинение от бренда", instructionB: "Назови семейный секрет", pattern: "{a} Не связано: {b}.", fallbackA: "Мы вас слышим и учимся", fallbackB: "завещание лежит в морозилке" },
+    { intensity: "footprint", instructionA: "Придумай название медицинской брошюры", instructionB: "Назови причину уехать из города", pattern: "{a}. Побочный эффект: {b}.", fallbackA: "Спросите врача про отдых", fallbackB: "бывшая забрала общий чат" },
+    { intensity: "footprint", instructionA: "Напиши тост на пенсию", instructionB: "Назови то, что нельзя наследовать", pattern: "{a} В комплекте: {b}.", fallbackA: "Ты научил нас уходить вовремя", fallbackB: "семейный суд" },
+  ],
+};
 
-export function plural(count: number, one: string, few: string, many: string): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
-}
+const BOT_LINES: Record<Language, Record<Role, string[]>> = {
+  en: {
+    reply: ["Cool story, still a receipt.", "The group chat saw this.", "This is a cry for a manager.", "Historically, no.", "We can circle back never."],
+    answer: ["It was free and I didn't want to go alone.", "The trial hasn't ended.", "I wanted to see how professionals do it.", "It was closer than walking.", "Someone else clicked it."],
+    context: ["Why is the shared card on a fan page?", "Are you still texting them?", "Did you bring a date to the funeral?", "Why were you in the stairwell?", "Who approved this purchase?"],
+    fragment: ["a loyalty card for feelings", "Don't make this a meeting.", "the family blender", "We value your patience.", "open on Sundays"],
+  },
+  ru: {
+    reply: ["История хорошая, чек лучше.", "Чат это уже видел.", "Позовите менеджера.", "Исторически нет.", "Вернёмся к этому никогда."],
+    answer: ["Было бесплатно, и я не хотел идти один.", "Пробный период ещё не кончился.", "Хотел посмотреть, как делают профи.", "Так было ближе, чем пешком.", "Это кто-то другой нажал."],
+    context: ["Почему общая карта на фанатской странице?", "Ты всё ещё ему пишешь?", "Ты привёл пару на похороны?", "Что ты делал на лестнице?", "Кто одобрил эту покупку?"],
+    fragment: ["карта лояльности для чувств", "Не надо делать из этого созвон.", "семейный блендер", "Мы ценим ваше терпение.", "открыто по воскресеньям"],
+  },
+};
 
-export function handleOf(name: string): string {
-  const map: Record<string, string> = {
-    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "i",
-    к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
-    х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+const NAMES: Record<Language, string[]> = {
+  en: ["Alex", "Mina", "Bo", "Svet", "Tim", "Kat", "Nia", "Omar"],
+  ru: ["Лёша", "Марина", "Богдан", "Света", "Тимур", "Катя", "Остап", "Нина"],
+};
+
+const AGOS: Record<Language, string[]> = {
+  en: ["1h", "2h", "3h", "4h", "6h", "8h"],
+  ru: ["1 ч", "2 ч", "3 ч", "4 ч", "6 ч", "8 ч"],
+};
+
+export function defaultPlaylist(rounds: number): Mode[] {
+  const count = clampRounds(rounds);
+  const presets: Record<number, Mode[]> = {
+    2: ["ratio", "dms"],
+    3: ["ratio", "dms", "explain"],
+    4: ["ratio", "dms", "sabotage", "explain"],
+    5: ["ratio", "dms", "sabotage", "explain", "ratio"],
   };
-  const slug = name
-    .toLowerCase()
-    .split("")
-    .map((char) => map[char] ?? char)
-    .join("")
-    .replace(/[^a-z0-9]/g, "");
-  return `@${slug || "user"}`;
+  return presets[count];
+}
+
+export function defaultConfig(language: Language = "en"): GameConfig {
+  return {
+    language,
+    intensity: "unhinged",
+    exclusions: "",
+    rounds: 3,
+    playlist: defaultPlaylist(3),
+    finaleMultiplier: false,
+    searchBudget: 6,
+  };
+}
+
+export function clampRounds(rounds: number): number {
+  if (!Number.isFinite(rounds)) return 3;
+  return Math.max(2, Math.min(5, Math.round(rounds)));
+}
+
+export function botNames(language: Language): string[] {
+  return NAMES[language];
+}
+
+export function botLine(language: Language, role: Role, index: number): string {
+  const lines = BOT_LINES[language][role];
+  return lines[Math.abs(index) % lines.length];
+}
+
+export function taskLimit(role: Role): number {
+  if (role === "reply") return 280;
+  if (role === "fragment") return 120;
+  return 200;
+}
+
+export function agoLabel(language: Language, index: number): string {
+  const labels = AGOS[language];
+  return labels[Math.abs(index) % labels.length];
+}
+
+export function sessionCounts(playerCount: number, playlist: readonly Mode[]) {
+  const accounts = Math.min(18, Math.max(8, playerCount * 2));
+  const imageGroups = Math.min(6, Math.max(4, Math.ceil(accounts / 3)));
+  const ratioRounds = playlist.filter((mode) => mode === "ratio").length;
+  return {
+    playerCount,
+    accounts,
+    imageGroups,
+    sparePosts: ratioRounds > 0 ? playerCount : 0,
+    postsPerRatioRound: playerCount,
+    perRound: playerCount,
+  };
+}
+
+export function fallbackAccounts(language: Language, count: number): AccountLine[] {
+  return Array.from({ length: count }, (_, index) => {
+    const base = ACCOUNTS[language][index % ACCOUNTS[language].length];
+    if (index < ACCOUNTS[language].length) return base;
+    return { ...base, handle: `${base.handle}${index}`.slice(0, 24), name: `${base.name} ${index + 1}` };
+  });
+}
+
+export function fallbackImageQueries(count: number): string[] {
+  return Array.from({ length: count }, (_, index) => IMAGE_QUERIES[index % IMAGE_QUERIES.length]);
+}
+
+export function fallbackPosts(language: Language, intensity: Intensity, count: number): string[] {
+  return takeLines(POSTS[language], intensity, count);
+}
+
+export function fallbackQuestions(language: Language, intensity: Intensity, count: number): string[] {
+  return takeLines(QUESTIONS[language], intensity, count);
+}
+
+export function fallbackSenders(language: Language, count: number): string[] {
+  return Array.from({ length: count }, (_, index) => SENDERS[language][index % SENDERS[language].length]);
+}
+
+export function fallbackScenarios(language: Language, intensity: Intensity, count: number): string[] {
+  return takeLines(SCENARIOS[language], intensity, count);
+}
+
+export function fallbackTemplates(language: Language, intensity: Intensity, count: number): TemplateLine[] {
+  const ordered = orderByIntensity(TEMPLATES[language], intensity);
+  return Array.from({ length: count }, (_, index) => {
+    const base = ordered[index % ordered.length];
+    if (index < ordered.length) return base;
+    return { ...base, instructionA: `${base.instructionA} (${index + 1})` };
+  });
+}
+
+function takeLines(lines: Line[], intensity: Intensity, count: number): string[] {
+  const ordered = orderByIntensity(lines, intensity).map((line) => line.text);
+  return Array.from({ length: count }, (_, index) => {
+    const text = ordered[index % ordered.length];
+    return index < ordered.length ? text : `${text} (${index + 1})`;
+  });
+}
+
+function orderByIntensity<T extends { intensity: Intensity }>(lines: T[], intensity: Intensity): T[] {
+  const ranks = new Map(INTENSITY_ORDER[intensity].map((item, index) => [item, index]));
+  return [...lines].sort((a, b) => (ranks.get(a.intensity) ?? 9) - (ranks.get(b.intensity) ?? 9));
+}
+
+export function isMode(value: string): value is Mode {
+  return value === "ratio" || value === "dms" || value === "explain" || value === "sabotage";
 }

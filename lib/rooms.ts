@@ -1,35 +1,36 @@
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
-import { generateTopics } from "./ai/generate";
-import { searchPhotos } from "./ai/images";
+import { generateSession } from "./ai/generate";
+import { fillImageGroups } from "./ai/images";
 import { sql } from "./db";
+import { defaultConfig, sessionCounts } from "./game/content";
 import {
   addBot,
   addPlayer,
   advancePhase,
-  pauseGame,
-  resumeGame,
-  setDebug,
-  applyFallback,
-  applyTopics,
+  applySettings,
+  beginGenerating,
+  castFavorite,
+  claimGeneration,
   cleanName,
-  ensureShells,
+  fallbackManifest,
+  freezeSession,
   freshRoom,
   GameError,
-  givePhotos,
-  isDeckReady,
-  missingTopics,
   nextMatch,
-  nextPhotoSlot,
+  pauseGame,
+  removeSubmission,
+  resumeGame,
   setCap,
-  startGame,
-  submitTwist,
-  submitVote,
-  submitWrite,
+  setDebug,
+  submit,
   tick,
+  vote,
 } from "./game/engine";
 import { normalizeRoomCode } from "./game/code";
+import { mulberry32 } from "./game/random";
 import { buildView } from "./game/view";
-import type { ClientView, RoomState } from "./game/types";
+import type { ClientView, GameConfig, Language, RoomState } from "./game/types";
+import { validateSession } from "./game/validate";
 
 type Row = { state: RoomState | string; version: number };
 
@@ -39,12 +40,8 @@ export class RoomNotFound extends Error {}
 
 function parseState(value: RoomState | string): RoomState {
   const state = typeof value === "string" ? (JSON.parse(value) as RoomState) : value;
-  return {
-    ...state,
-    match: state.match || 1,
-    played: state.played ?? [],
-    usedTopics: state.usedTopics ?? [],
-  };
+  if (!state?.config || !state.phase) throw new RoomNotFound();
+  return state;
 }
 
 async function load(code: string): Promise<{ state: RoomState; version: number }> {
@@ -68,19 +65,18 @@ async function mutate(code: string, change: (state: RoomState) => RoomState): Pr
     if (JSON.stringify(next) === JSON.stringify(row.state)) return row.state;
     if (await save(code, row.version, next)) return next;
   }
-  throw new GameError("Комната занята, попробуй ещё раз");
+  throw new GameError("The room is busy, try again");
 }
 
 function makeCode(): string {
   return Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
 }
 
-export async function createRoom(input: { cap: number; demo: boolean }): Promise<{ code: string; hostToken: string }> {
-  const cap = input.demo ? 3 : clampCap(input.cap);
-  const recent = await sql<{ count: string }>(
-    "select count(*)::text as count from rooms where created_at > now() - interval '1 hour'",
-  );
-  if (Number(recent[0]?.count ?? 0) > 40) throw new GameError("Слишком много комнат за час. Подожди немного.");
+export async function createRoom(input: { cap: number; demo: boolean; language?: Language }): Promise<{ code: string; hostToken: string }> {
+  const language = input.language === "ru" ? "ru" : "en";
+  const cap = input.demo ? 4 : clampCap(input.cap);
+  const recent = await sql<{ count: string }>("select count(*)::text as count from rooms where created_at > now() - interval '1 hour'");
+  if (Number(recent[0]?.count ?? 0) > 40) throw new GameError(language === "ru" ? "Слишком много комнат за час. Подожди немного." : "Too many rooms this hour. Wait a moment.");
   for (let attempt = 0; attempt < 6; attempt += 1) {
     const code = makeCode();
     const hostToken = randomBytes(24).toString("hex");
@@ -90,6 +86,7 @@ export async function createRoom(input: { cap: number; demo: boolean }): Promise
       cap,
       demo: input.demo,
       now: Date.now(),
+      config: defaultConfig(language),
     });
     const rows = await sql<{ code: string }>(
       "insert into rooms (code, state, version) values ($1, $2::jsonb, 1) on conflict (code) do nothing returning code",
@@ -97,70 +94,61 @@ export async function createRoom(input: { cap: number; demo: boolean }): Promise
     );
     if (rows[0]) return { code, hostToken };
   }
-  throw new GameError("Не вышло создать комнату");
-}
-
-export async function syncRoom(code: string): Promise<{ state: RoomState; version: number }> {
-  await ensureTopics(code);
-  for (let step = 0; step < 3; step += 1) {
-    const fetched = await ensureOnePhoto(code);
-    if (!fetched) break;
-  }
-  await mutate(code, (state) => tick(ensureShells(state), Date.now()));
-  return load(code);
-}
-
-async function ensureTopics(code: string): Promise<void> {
-  const row = await load(code);
-  const missing = missingTopics(ensureShells(row.state));
-  if (missing.length === 0) return;
-  if (row.state.deckLock && Date.now() - row.state.deckLock < 20_000) return;
-  if (!process.env.OPENAI_API_KEY?.trim()) {
-    await mutate(code, (state) => applyFallback(ensureShells(state)));
-    return;
-  }
-  await mutate(code, (state) => (missingTopics(state).length ? { ...state, deckLock: Date.now() } : state));
-  try {
-    const avoid = [...row.state.usedTopics, ...row.state.cards.map((card) => card.topic).filter(Boolean)];
-    const fills = await generateTopics(missing, avoid);
-    await mutate(code, (state) => {
-      const shelled = ensureShells(state);
-      if (!fills?.length) return applyFallback(shelled);
-      const withModel = applyTopics(shelled, fills, "model");
-      return missingTopics(withModel).length ? applyFallback(withModel) : withModel;
-    });
-  } catch {
-    await mutate(code, (state) => applyFallback({ ...ensureShells(state), deckLock: null }));
-  }
-}
-
-async function ensureOnePhoto(code: string): Promise<boolean> {
-  const row = await load(code);
-  const slot = nextPhotoSlot(ensureShells(row.state));
-  if (!slot) return false;
-  let photos: Awaited<ReturnType<typeof searchPhotos>> = [];
-  try {
-    photos = await searchPhotos(slot.query);
-  } catch {
-    photos = [];
-  }
-  await mutate(code, (state) => givePhotos(state, slot.seat, photos, photos.length === 0));
-  return true;
+  throw new GameError(language === "ru" ? "Комната не создалась" : "Couldn't create a room");
 }
 
 export async function viewRoom(code: string, token: string | null): Promise<ClientView> {
-  const { state, version } = await syncRoom(normalizeCode(code));
-  return buildView(state, version, token, Date.now());
+  const normalized = normalizeCode(code);
+  await kick(normalized);
+  const saved = await load(normalized);
+  return buildView(saved.state, saved.version, token, Date.now());
+}
+
+async function kick(code: string): Promise<void> {
+  await mutate(code, (state) => tick(state, Date.now()));
+  await ensureSession(code);
+  await mutate(code, (state) => tick(state, Date.now()));
+}
+
+async function ensureSession(code: string): Promise<void> {
+  const row = await load(code);
+  if (row.state.phase !== "generating" || row.state.prompts.length > 0) return;
+  const token = randomUUID();
+  await mutate(code, (state) => claimGeneration(state, Date.now(), token));
+  const claimed = await load(code);
+  if (claimed.state.generationToken !== token || claimed.state.phase !== "generating") return;
+  const players = claimed.state.seats.length;
+  let manifest = validateSession(null, claimed.state.config, players);
+  try {
+    const raw = await generateSession(claimed.state.config, sessionCounts(players, claimed.state.config.playlist));
+    manifest = validateSession(raw, claimed.state.config, players);
+  } catch {
+    manifest = fallbackManifest(claimed.state);
+  }
+  try {
+    manifest = {
+      ...manifest,
+      imageGroups: await fillImageGroups(manifest.imageGroups, claimed.state.config.searchBudget, mulberry32(claimed.state.seed || 1)),
+    };
+  } catch {
+    manifest = { ...manifest, imageGroups: manifest.imageGroups.map((group) => ({ ...group, images: [] })) };
+  }
+  await mutate(code, (state) => {
+    if (state.phase !== "generating" || state.generationToken !== token) return state;
+    return freezeSession(state, manifest, Date.now());
+  });
 }
 
 type Action =
   | { type: "join"; name?: string }
   | { type: "cap"; cap?: number }
+  | { type: "settings"; language?: Language; intensity?: GameConfig["intensity"]; exclusions?: string; rounds?: number; playlist?: GameConfig["playlist"]; finaleMultiplier?: boolean }
   | { type: "again" }
   | { type: "start" }
-  | { type: "write"; text?: string; photo?: number | null }
-  | { type: "twist"; text?: string }
-  | { type: "vote"; seat?: number }
+  | { type: "submit"; assignmentId?: string; text?: string }
+  | { type: "vote"; entryId?: string }
+  | { type: "favorite"; entryId?: string }
+  | { type: "remove"; submissionId?: string }
   | { type: "skip" }
   | { type: "debug"; on?: boolean }
   | { type: "pause" }
@@ -173,65 +161,82 @@ export async function act(code: string, token: string | null, action: Action): P
   if (action.type === "join") {
     const playerId = randomUUID();
     const playerToken = randomBytes(24).toString("hex");
-    const state = await mutate(normalized, (current) =>
-      addPlayer(ensureShells(current), {
+    await mutate(normalized, (current) =>
+      addPlayer(current, {
         id: playerId,
         token: playerToken,
-        name: cleanName(action.name ?? ""),
+        name: cleanName(action.name ?? "", current.config.language),
         bot: false,
         host: Boolean(token && token === current.hostToken),
         now,
       }),
     );
+    await kick(normalized);
     const saved = await load(normalized);
-    return { view: buildView(state, saved.version, playerToken, now), token: playerToken, playerId };
+    return { view: buildView(saved.state, saved.version, playerToken, now), token: playerToken, playerId };
   }
 
-  const state = await mutate(normalized, (current) => {
+  await mutate(normalized, (current) => {
     const host = Boolean(token && (token === current.hostToken || current.players.some((player) => player.token === token && player.host)));
     const player = current.players.find((item) => item.token === token);
     if (action.type === "cap") {
-      if (!host) throw new GameError("Число игроков меняет только создатель");
+      if (!host) throw new GameError(current.config.language === "ru" ? "Число игроков меняет только создатель" : "Only the host can change the player count");
       return setCap(current, clampCap(action.cap ?? current.cap));
     }
+    if (action.type === "settings") {
+      if (!host) throw new GameError(current.config.language === "ru" ? "Настройки меняет только создатель" : "Only the host can change settings");
+      return applySettings(current, {
+        language: action.language,
+        intensity: action.intensity,
+        exclusions: action.exclusions,
+        rounds: action.rounds,
+        playlist: action.playlist,
+        finaleMultiplier: action.finaleMultiplier,
+      });
+    }
     if (action.type === "again") {
-      if (!host && !current.demo) throw new GameError("Следующую катку крутит создатель");
-      return nextMatch(current);
+      if (!host && !current.demo) throw new GameError(current.config.language === "ru" ? "Следующую катку крутит создатель" : "The host starts the next match");
+      return nextMatch(current, now);
     }
     if (action.type === "start") {
-      if (!host) throw new GameError("Начинает создатель комнаты");
-      if (!isDeckReady(current)) throw new GameError("Колода ещё собирается");
-      return startGame(current, now);
+      if (!host) throw new GameError(current.config.language === "ru" ? "Начинает создатель комнаты" : "The host starts the game");
+      return beginGenerating(current, now);
     }
     if (action.type === "debug") {
-      if (!host) throw new GameError("Режим проверки включает создатель");
+      if (!host) throw new GameError(current.config.language === "ru" ? "Режим проверки включает создатель" : "The host toggles check mode");
       return setDebug(current, Boolean(action.on), now);
     }
     if (action.type === "pause") {
-      if (!host && !current.demo) throw new GameError("Паузу ставит создатель");
+      if (!host && !current.demo) throw new GameError(current.config.language === "ru" ? "Паузу ставит создатель" : "The host pauses");
       return pauseGame(current, now);
     }
     if (action.type === "resume") {
-      if (!host && !current.demo) throw new GameError("Продолжить может создатель");
+      if (!host && !current.demo) throw new GameError(current.config.language === "ru" ? "Продолжить может создатель" : "The host resumes");
       return resumeGame(current, now);
     }
     if (action.type === "bot") {
-      if (!host) throw new GameError("Бота добавляет создатель");
+      if (!host) throw new GameError(current.config.language === "ru" ? "Бота добавляет создатель" : "The host adds bots");
       return addBot(current, now);
     }
     if (action.type === "skip") {
-      if (!host && !current.demo) throw new GameError("Дальше может переключить создатель");
-      if (current.phase === "lobby" || current.phase === "done") return current;
+      if (!host && !current.demo) throw new GameError(current.config.language === "ru" ? "Дальше может переключить создатель" : "The host skips ahead");
+      if (current.phase === "lobby" || current.phase === "game_over") return current;
+      if (current.phase === "generating") return freezeSession(current, fallbackManifest(current), now);
       return advancePhase(current, now);
     }
-    if (!player) throw new GameError("Сначала представься");
-    if (action.type === "write") return submitWrite(current, player.id, action.text ?? "", action.photo ?? null, now);
-    if (action.type === "twist") return submitTwist(current, player.id, action.text ?? "", now);
-    if (action.type === "vote") return submitVote(current, player.id, Number(action.seat), now);
+    if (action.type === "remove") {
+      if (!host) throw new GameError(current.config.language === "ru" ? "Убирать может только создатель" : "Only the host can remove a line");
+      return removeSubmission(current, action.submissionId ?? "");
+    }
+    if (!player) throw new GameError(current.config.language === "ru" ? "Сначала представься" : "Join with a name first");
+    if (action.type === "submit") return submit(current, player.id, action.assignmentId ?? "", action.text ?? "", now);
+    if (action.type === "vote") return vote(current, player.id, action.entryId ?? "", now);
+    if (action.type === "favorite") return castFavorite(current, player.id, action.entryId ?? "", now);
     return current;
   });
+  await kick(normalized);
   const saved = await load(normalized);
-  return { view: buildView(state, saved.version, token, now) };
+  return { view: buildView(saved.state, saved.version, token, now) };
 }
 
 export function normalizeCode(code: string): string {
@@ -239,8 +244,8 @@ export function normalizeCode(code: string): string {
 }
 
 function clampCap(cap: number): number {
-  if (!Number.isFinite(cap)) return 5;
-  return Math.max(3, Math.min(8, Math.round(cap)));
+  if (!Number.isFinite(cap)) return 6;
+  return Math.max(4, Math.min(8, Math.round(cap)));
 }
 
 export { GameError };

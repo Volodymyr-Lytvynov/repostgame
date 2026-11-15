@@ -33,8 +33,8 @@ function bearer(request: Request): string | null {
 }
 
 function fail(error: unknown) {
-  if (error instanceof RoomNotFound) return Response.json({ error: "Нет такой комнаты" }, { status: 404 });
+  if (error instanceof RoomNotFound) return Response.json({ error: "No such room" }, { status: 404 });
   if (error instanceof GameError) return Response.json({ error: error.message }, { status: 400 });
   console.error(error);
-  return Response.json({ error: "Комната не ответила" }, { status: 500 });
+  return Response.json({ error: "The room didn't answer" }, { status: 500 });
 }

@@ -1,53 +1,41 @@
-import { botTwist, botWrite, fallbackTopic, limits, PALETTE, plural } from "./content";
-import { ROUND_KINDS, type Card, type Phase, type Photo, type RoomState, type RoundKind, type ScoreEvent, type ShownCard, type Submission, type Twist } from "./types";
+import { buildAssignments, duelId, isDuel, revealOrders, roundId } from "./assign";
+import { botLine, botNames, defaultConfig, isMode, PALETTE, taskLimit, clampRounds, defaultPlaylist } from "./content";
+import { currentMode, currentPromptIndex, duelOutcome, legalEntryIds, sharedEntries, stepRole, submissionFor } from "./entries";
+import { t } from "./i18n";
+import { hashSeed, mulberry32, shuffle } from "./random";
+import { activeContest, chronicBadges, scoreContest, viralBadges } from "./score";
+import type { AccountDraft, Badge, FictionalAccount, GameConfig, ImageGroup, Language, Phase, Player, RoomState, ScoreEvent, SessionManifest } from "./types";
+import { validateSession } from "./validate";
 
 export class GameError extends Error {}
 
-export function duration(phase: Phase, demo: boolean): number {
-  const table: Record<Phase, number> = {
-    lobby: 0,
-    write: demo ? 8000 : 50000,
-    twist: demo ? 8000 : 45000,
-    reveal: demo ? 5500 : 7000,
-    vote: demo ? 8000 : 25000,
-    scores: demo ? 5000 : 8000,
-    done: 0,
-  };
-  return table[phase];
-}
-
-export const MATCH_SIZE = 4;
-
-export function drawPlaylist(played: readonly RoundKind[], random: () => number = Math.random): RoundKind[] {
-  const seen = new Set(played);
-  const picked = shuffle(ROUND_KINDS.filter((kind) => !seen.has(kind)), random).slice(0, MATCH_SIZE);
-  if (picked.length === MATCH_SIZE) return picked;
-  const recent = new Set(played.slice(-MATCH_SIZE));
-  const older = shuffle(
-    ROUND_KINDS.filter((kind) => !picked.includes(kind) && !recent.has(kind)),
-    random,
-  );
-  for (const kind of older) {
-    if (picked.length === MATCH_SIZE) break;
-    picked.push(kind);
+export function duration(state: Pick<RoomState, "phase" | "demo" | "writeStep" | "config" | "round">): number {
+  const mode = state.config.playlist[state.round] ?? "ratio";
+  const demo = state.demo;
+  switch (state.phase) {
+    case "lobby":
+    case "game_over":
+      return 0;
+    case "generating":
+      return demo ? 8000 : 25000;
+    case "round_intro":
+      return demo ? 2000 : 5000;
+    case "writing":
+      if (mode === "dms" && state.writeStep === 0) return demo ? 6000 : 30000;
+      if (mode === "dms" || mode === "sabotage") return demo ? 7000 : 45000;
+      return demo ? 8000 : 60000;
+    case "reveal":
+      return demo ? 2500 : 8000;
+    case "voting":
+      return isDuel(mode) ? (demo ? 5000 : 15000) : demo ? 6000 : 20000;
+    case "results":
+    case "leaderboard":
+      return demo ? 3000 : 8000;
+    case "favorites":
+      return demo ? 6000 : 20000;
+    default:
+      return 0;
   }
-  if (picked.length === MATCH_SIZE) return picked;
-  const rest = shuffle(
-    ROUND_KINDS.filter((kind) => !picked.includes(kind)),
-    random,
-  );
-  return [...picked, ...rest].slice(0, MATCH_SIZE);
-}
-
-function shuffle<T>(items: readonly T[], random: () => number): T[] {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(random() * (index + 1));
-    const current = copy[index];
-    copy[index] = copy[swap];
-    copy[swap] = current;
-  }
-  return copy;
 }
 
 export function freshRoom(input: {
@@ -56,223 +44,82 @@ export function freshRoom(input: {
   cap: number;
   demo: boolean;
   now: number;
-  playlist?: RoundKind[];
-  random?: () => number;
+  config?: GameConfig;
+  match?: number;
 }): RoomState {
-  const played: RoundKind[] = [];
   const state: RoomState = {
     code: input.code,
     demo: input.demo,
     cap: input.cap,
     hostToken: input.hostToken,
-    match: 1,
-    played,
-    usedTopics: [],
-    playlist: input.playlist ?? drawPlaylist(played, input.random ?? Math.random),
+    match: input.match ?? 1,
     createdAt: input.now,
     players: [],
     status: "lobby",
     phase: "lobby",
+    config: input.config ?? defaultConfig(),
     round: 0,
-    cards: [],
+    writeStep: 0,
+    contest: 0,
+    accounts: [],
+    imageGroups: [],
+    prompts: [],
+    assignments: [],
+    orders: [],
     submissions: [],
-    twists: [],
     votes: [],
+    favorites: [],
     scores: {},
     log: [],
-    reveal: 0,
+    badges: [],
+    scored: [],
     deadline: null,
     seats: [],
-    deckLock: null,
+    seed: 0,
+    generationLock: null,
+    generationToken: null,
     promptSource: null,
     debug: false,
     paused: false,
     pauseRemaining: null,
   };
-  const withBots = input.demo ? addDemoBots(state, input.now) : state;
-  return ensureShells(withBots);
+  return input.demo ? addDemoBots(state, input.now) : state;
 }
 
-function addDemoBots(state: RoomState, now: number): RoomState {
-  const names = ["Лёша", "Марина", "Богдан"];
-  const players = names.map((name, index) => ({
-    id: `bot-${index}-${state.code}`,
-    token: `bot-token-${index}-${state.code}`,
-    name,
-    color: PALETTE[index],
-    bot: true,
-    host: false,
-    joinedAt: now + index,
-  }));
-  return { ...state, players };
-}
-
-export function ensureShells(state: RoomState): RoomState {
-  const have = new Set(state.cards.map((card) => `${card.kind}:${card.seat}`));
-  const cards = [...state.cards];
-  for (const slot of requiredSlots(state.playlist, state.cap)) {
-    if (have.has(`${slot.kind}:${slot.seat}`)) continue;
-    cards.push({
-      kind: slot.kind,
-      seat: slot.seat,
-      topic: "",
-      query: "",
-      photos: slot.kind === "instagram" ? null : [],
-      photoError: false,
-    });
-  }
-  return cards.length === state.cards.length ? state : { ...state, cards };
-}
-
-export function requiredSlots(playlist: RoundKind[], cap: number): Array<{ kind: RoundKind; seat: number }> {
-  const slots: Array<{ kind: RoundKind; seat: number }> = [];
-  for (const kind of playlist) {
-    for (let seat = 0; seat < cap; seat += 1) slots.push({ kind, seat });
-  }
-  return slots;
-}
-
-export function cardAt(state: RoomState, kind: RoundKind, seat: number): Card | undefined {
-  return state.cards.find((card) => card.kind === kind && card.seat === seat);
-}
-
-export function missingTopics(state: RoomState): Array<{ kind: RoundKind; seat: number }> {
-  return requiredSlots(state.playlist, state.cap).filter((slot) => {
-    const card = cardAt(state, slot.kind, slot.seat);
-    return !card?.topic;
-  });
-}
-
-export function nextPhotoSlot(state: RoomState): { kind: RoundKind; seat: number; query: string } | null {
-  for (const slot of requiredSlots(state.playlist, state.cap)) {
-    if (slot.kind !== "instagram") continue;
-    const card = cardAt(state, slot.kind, slot.seat);
-    if (card?.topic && card.photos === null) return { ...slot, query: card.query || card.topic };
-  }
-  return null;
-}
-
-export function isDeckReady(state: RoomState): boolean {
-  return requiredSlots(state.playlist, state.cap).every((slot) => {
-    const card = cardAt(state, slot.kind, slot.seat);
-    if (!card?.topic) return false;
-    if (slot.kind === "instagram" && card.photos === null) return false;
-    return true;
-  });
-}
-
-export function deckProgress(state: RoomState): { ready: boolean; done: number; total: number; label: string } {
-  const slots = requiredSlots(state.playlist, state.cap);
-  let done = 0;
-  let photosDone = 0;
-  let photosTotal = 0;
-  for (const slot of slots) {
-    const card = cardAt(state, slot.kind, slot.seat);
-    const topicReady = Boolean(card?.topic);
-    const photoReady = slot.kind !== "instagram" || card?.photos !== null;
-    if (topicReady && photoReady) done += 1;
-    if (slot.kind === "instagram") {
-      photosTotal += 1;
-      if (card?.photos !== null && card?.topic) photosDone += 1;
-    }
-  }
-  const ready = slots.length > 0 && done === slots.length;
-  const label = ready
-    ? "Колода готова"
-    : photosTotal > 0
-      ? `Задания и фото · ${photosDone} из ${photosTotal}`
-      : `Задания · ${done} из ${slots.length}`;
-  return { ready, done, total: slots.length, label };
-}
-
-export function applyTopics(
-  state: RoomState,
-  fills: Array<{ kind: RoundKind; seat: number; topic: string; query?: string }>,
-  source: "model" | "backup",
-): RoomState {
-  const nextCards = state.cards.map((card) => {
-    if (card.topic) return card;
-    const fill = fills.find((item) => item.kind === card.kind && item.seat === card.seat);
-    if (!fill?.topic.trim()) return card;
-    return {
-      ...card,
-      topic: fill.topic.trim().slice(0, 140),
-      query: (fill.query ?? "").trim().slice(0, 80),
-    };
-  });
-  const stillMissing = missingTopics({ ...state, cards: nextCards });
-  const completed = stillMissing.length === 0 ? source : state.promptSource;
-  return { ...state, cards: nextCards, promptSource: completed, deckLock: stillMissing.length ? state.deckLock : null };
-}
-
-export function applyFallback(state: RoomState): RoomState {
-  const fills = missingTopics(state).map((slot) => {
-    const topic = fallbackTopic(slot.kind, state.code, slot.seat, state.played.length);
-    return { kind: slot.kind, seat: slot.seat, topic: topic.topic, query: topic.query };
-  });
-  return applyTopics(state, fills, "backup");
-}
-
-export function givePhotos(state: RoomState, seat: number, photos: Photo[], failed: boolean): RoomState {
+export function applySettings(state: RoomState, patch: Partial<GameConfig>): RoomState {
+  if (state.phase !== "lobby") fail(state, "settingsLobby");
+  const language = patch.language === "en" || patch.language === "ru" ? patch.language : state.config.language;
+  const intensity = patch.intensity === "casual" || patch.intensity === "unhinged" || patch.intensity === "footprint" ? patch.intensity : state.config.intensity;
+  const rounds = patch.rounds === undefined ? state.config.rounds : clampRounds(patch.rounds);
+  let playlist = patch.playlist ?? (patch.rounds === undefined ? state.config.playlist : defaultPlaylist(rounds));
+  if (playlist.length !== rounds || playlist.some((mode) => !isMode(mode))) playlist = defaultPlaylist(rounds);
   return {
     ...state,
-    cards: state.cards.map((card) =>
-      card.kind === "instagram" && card.seat === seat && card.photos === null
-        ? { ...card, photos, photoError: failed || photos.length === 0 }
-        : card,
-    ),
+    config: {
+      ...state.config,
+      language,
+      intensity,
+      rounds,
+      playlist,
+      exclusions: patch.exclusions === undefined ? state.config.exclusions : cleanText(patch.exclusions, 120),
+      finaleMultiplier: patch.finaleMultiplier === undefined ? state.config.finaleMultiplier : Boolean(patch.finaleMultiplier),
+      searchBudget: 6,
+    },
   };
 }
 
 export function setCap(state: RoomState, cap: number): RoomState {
-  if (state.phase !== "lobby") throw new GameError("Число игроков меняется только в лобби");
-  if (cap < 3 || cap > 8) throw new GameError("В комнате от 3 до 8 игроков");
-  if (cap < state.players.length) throw new GameError("Стольких людей уже не высадить");
-  return ensureShells({ ...state, cap });
+  if (state.phase !== "lobby") fail(state, "capLobby");
+  if (cap < 4 || cap > 8) fail(state, "capRange");
+  if (cap < state.players.length) fail(state, "capSmall");
+  return { ...state, cap };
 }
 
-export function nextMatch(state: RoomState, random: () => number = Math.random): RoomState {
-  if (state.phase !== "done") throw new GameError("Следующая катка открывается после финала");
-  const played = [...state.played, ...state.playlist];
-  const playlist = drawPlaylist(played, random);
-  const usedTopics = [...new Set([...state.usedTopics, ...state.cards.map((card) => card.topic.trim()).filter(Boolean)])];
-  const cards = state.cards.map((card) =>
-    playlist.includes(card.kind)
-      ? { ...card, topic: "", query: "", photos: card.kind === "instagram" ? null : [], photoError: false }
-      : card,
-  );
-  return ensureShells({
-    ...state,
-    match: state.match + 1,
-    played,
-    usedTopics,
-    playlist,
-    cards,
-    status: "lobby",
-    phase: "lobby",
-    round: 0,
-    submissions: [],
-    twists: [],
-    votes: [],
-    scores: {},
-    log: [],
-    reveal: 0,
-    deadline: null,
-    seats: [],
-    deckLock: null,
-    promptSource: null,
-    paused: false,
-    pauseRemaining: null,
-  });
-}
-
-export function addPlayer(state: RoomState, player: Omit<RoomState["players"][number], "color" | "joinedAt"> & { now: number }): RoomState {
-  if (state.phase !== "lobby") throw new GameError("Игра уже началась");
-  if (state.players.length >= state.cap) throw new GameError("Комната заполнена");
-  const name = cleanName(player.name);
-  if (state.players.some((item) => item.name.toLowerCase() === name.toLowerCase())) {
-    throw new GameError("Такое имя уже занято");
-  }
+export function addPlayer(state: RoomState, player: Omit<Player, "color" | "joinedAt" | "name"> & { name: string; now: number }): RoomState {
+  if (state.phase !== "lobby") fail(state, "alreadyStarted");
+  if (state.players.length >= state.cap) fail(state, "roomFull");
+  const name = cleanName(player.name, state.config.language);
+  if (state.players.some((item) => item.name.toLowerCase() === name.toLowerCase())) fail(state, "nameTaken");
   return {
     ...state,
     players: [
@@ -290,56 +137,90 @@ export function addPlayer(state: RoomState, player: Omit<RoomState["players"][nu
   };
 }
 
-export function cleanName(raw: string): string {
-  const name = raw.replace(/\s+/g, " ").trim();
-  if (name.length < 2 || name.length > 16) throw new GameError("Имя от 2 до 16 символов");
-  return name;
+export function addBot(state: RoomState, now: number): RoomState {
+  if (!state.debug) fail(state, "botsDebug");
+  if (state.phase !== "lobby") fail(state, "botsLobby");
+  const names = botNames(state.config.language);
+  const name = names.find((item) => !state.players.some((player) => player.name === item)) ?? `Bot ${state.players.length + 1}`;
+  return addPlayer(state, {
+    id: `bot-${state.players.length}-${state.code}`,
+    token: `bot-token-${state.players.length}-${state.code}`,
+    name,
+    bot: true,
+    host: false,
+    now,
+  });
 }
 
-export function cleanText(raw: string, max: number): string {
-  return raw.replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-export function twisterSeat(seat: number, count: number): number {
-  return (seat + 1) % count;
-}
-
-export function sourceSeatFor(seat: number, count: number): number {
-  return (seat - 1 + count) % count;
-}
-
-export function blockedSeat(state: RoomState, voterSeat: number): number {
-  if (voterSeat < 0) return -1;
-  return sourceSeatFor(voterSeat, state.seats.length);
-}
-
-export function startGame(state: RoomState, now: number): RoomState {
-  if (!isDeckReady(state)) throw new GameError("Колода ещё собирается");
-  if (state.players.length < 3) throw new GameError("Нужно минимум три игрока");
-  if (state.phase !== "lobby") throw new GameError("Игра уже идёт");
+export function beginGenerating(state: RoomState, now: number): RoomState {
+  if (state.phase !== "lobby") fail(state, "alreadyStarted");
+  if (state.players.length < 4) fail(state, "needFour");
   const seats = [...state.players].sort((a, b) => a.joinedAt - b.joinedAt).map((player) => player.id);
-  return {
+  const next: RoomState = {
     ...state,
     status: "playing",
-    phase: "write",
-    round: 0,
+    phase: "generating",
     seats,
-    submissions: [],
-    twists: [],
-    votes: [],
+    seed: hashSeed([state.code, String(state.match), ...seats]),
     scores: Object.fromEntries(seats.map((id) => [id, 0])),
+    submissions: [],
+    votes: [],
+    favorites: [],
     log: [],
-    reveal: 0,
-    deadline: now + duration("write", state.demo),
+    badges: [],
+    scored: [],
+    round: 0,
+    contest: 0,
+    writeStep: 0,
+    prompts: [],
+    assignments: [],
+    orders: [],
+    accounts: [],
+    generationLock: null,
+    generationToken: null,
+    promptSource: null,
   };
+  return { ...next, ...schedule(next, now, "generating") };
+}
+
+export function claimGeneration(state: RoomState, now: number, token: string): RoomState {
+  if (state.phase !== "generating" || state.prompts.length > 0) return state;
+  if (state.generationLock && now - state.generationLock < 40_000) return state;
+  return { ...state, generationLock: now, generationToken: token };
+}
+
+export function freezeSession(state: RoomState, manifest: SessionManifest, now: number): RoomState {
+  if (state.phase !== "generating") return state;
+  const random = mulberry32(state.seed || 1);
+  const accounts = attachImages(manifest.accounts, manifest.imageGroups, random);
+  const next: RoomState = {
+    ...state,
+    accounts,
+    imageGroups: manifest.imageGroups,
+    prompts: manifest.prompts,
+    assignments: buildAssignments(state.seats, state.config.playlist, state.seed || 1),
+    orders: revealOrders(state.config.playlist, state.seats.length, state.seed || 1),
+    promptSource: manifest.source,
+    generationLock: null,
+    phase: "round_intro",
+    round: 0,
+    contest: 0,
+    writeStep: 0,
+  };
+  return { ...next, ...schedule(next, now, "round_intro") };
+}
+
+export function fallbackManifest(state: RoomState): SessionManifest {
+  return validateSession(null, state.config, state.seats.length || state.players.length);
 }
 
 export function tick(state: RoomState, now: number): RoomState {
   if (state.status === "finished" || state.paused) return state;
   if (state.phase === "lobby") {
-    if (state.demo && !state.debug && isDeckReady(state) && state.players.length >= 3) return startGame(state, now);
+    if (state.demo && !state.debug && state.players.length >= 4) return beginGenerating(state, now);
     return state;
   }
+  if (state.phase === "generating" || state.phase === "game_over") return state;
   const withBots = applyBotMoves(state, now);
   if (!shouldAdvance(withBots, now)) return withBots;
   return advancePhase(withBots, now);
@@ -351,8 +232,8 @@ export function setDebug(state: RoomState, on: boolean, now: number): RoomState 
 }
 
 export function pauseGame(state: RoomState, now: number): RoomState {
-  if (state.phase === "lobby" || state.phase === "done" || state.paused) return state;
-  const remaining = state.deadline === null ? duration(state.phase, state.demo) : Math.max(0, state.deadline - now);
+  if (state.phase === "lobby" || state.phase === "game_over" || state.paused) return state;
+  const remaining = state.deadline === null ? duration(state) : Math.max(0, state.deadline - now);
   return { ...state, debug: true, paused: true, deadline: null, pauseRemaining: remaining };
 }
 
@@ -361,392 +242,323 @@ export function resumeGame(state: RoomState, now: number): RoomState {
   return {
     ...state,
     paused: false,
-    deadline: now + (state.pauseRemaining ?? duration(state.phase, state.demo)),
+    deadline: now + (state.pauseRemaining ?? duration(state)),
     pauseRemaining: null,
   };
 }
 
-const BOT_NAMES = ["Лёша", "Марина", "Богдан", "Света", "Тимур", "Катя", "Остап", "Нина"];
-
-export function addBot(state: RoomState, now: number): RoomState {
-  if (!state.debug) throw new GameError("Бота можно добавить в режиме проверки");
-  if (state.phase !== "lobby") throw new GameError("Бота можно добавить только до старта");
-  const name = BOT_NAMES.find((item) => !state.players.some((player) => player.name === item)) ?? `Бот ${state.players.length + 1}`;
-  const index = state.players.length;
-  return addPlayer(state, {
-    id: `bot-${index}-${state.code}`,
-    token: `bot-token-${index}-${state.code}`,
-    name,
-    bot: true,
-    host: false,
-    now,
-  });
-}
-
-function applyBotMoves(state: RoomState, now: number): RoomState {
-  if (!botReady(state, now)) return state;
-  if (state.phase === "write") {
-    let submissions = state.submissions;
-    let changed = false;
-    state.seats.forEach((id, seat) => {
-      const player = playerById(state, id);
-      if (!player?.bot || submissionFor(state, seat)) return;
-      submissions = [...submissions, botSubmission(state, seat, id)];
-      changed = true;
-    });
-    return changed ? { ...state, submissions } : state;
-  }
-  if (state.phase === "twist") {
-    let twists = state.twists;
-    let changed = false;
-    state.seats.forEach((id, seat) => {
-      const player = playerById(state, id);
-      const source = sourceSeatFor(seat, state.seats.length);
-      if (!player?.bot || twistFor(state, source)) return;
-      twists = [...twists, botTwistEntry(state, source, id)];
-      changed = true;
-    });
-    return changed ? { ...state, twists } : state;
-  }
-  if (state.phase === "vote") {
-    let votes = state.votes;
-    let changed = false;
-    for (const id of state.seats) {
-      const player = playerById(state, id);
-      if (!player?.bot || voteFor(state, id) || !voterCanVote(state, id)) continue;
-      const seat = botChoice(state, id);
-      if (seat === null) continue;
-      votes = [...votes, { round: state.round, voterId: id, seat }];
-      changed = true;
-    }
-    return changed ? { ...state, votes } : state;
-  }
-  return state;
-}
-
-function botReady(state: RoomState, now: number): boolean {
-  if (!state.deadline) return false;
-  if (state.phase === "reveal" || state.phase === "scores" || state.phase === "lobby" || state.phase === "done") {
-    return false;
-  }
-  return now >= state.deadline - duration(state.phase, state.demo) + 1200;
-}
-
-function shouldAdvance(state: RoomState, now: number): boolean {
-  if (state.debug || state.paused) return false;
-  if (state.phase === "reveal" || state.phase === "scores") return Boolean(state.deadline && now >= state.deadline);
-  if (state.phase === "write" || state.phase === "twist" || state.phase === "vote") {
-    return phaseComplete(state) || Boolean(state.deadline && now >= state.deadline);
-  }
-  return false;
-}
-
-function phaseComplete(state: RoomState): boolean {
-  if (state.phase === "write") return state.seats.every((_, seat) => submissionFor(state, seat));
-  if (state.phase === "twist") return state.seats.every((id) => twistFor(state, sourceSeatFor(state.seats.indexOf(id), state.seats.length)));
-  if (state.phase === "vote") return state.seats.every((id) => !voterCanVote(state, id) || voteFor(state, id));
-  return false;
-}
-
 export function advancePhase(state: RoomState, now: number): RoomState {
-  if (state.phase === "write") return beginTwist(fillMissingWrites(state), now);
-  if (state.phase === "twist") return beginReveal(fillMissingTwists(state), now);
-  if (state.phase === "reveal") {
-    const order = revealOrder(state);
-    if (state.reveal + 1 < order.length) {
-      return { ...state, reveal: state.reveal + 1, ...schedule(state, now, "reveal") };
+  if (state.phase === "round_intro") return beginWriting(state, now);
+  if (state.phase === "writing") {
+    const filled = fillMissingBots(state);
+    if (currentMode(filled) === "dms" && filled.writeStep === 0) {
+      const next = { ...filled, writeStep: 1, phase: "writing" as const };
+      return { ...next, ...schedule(next, now, "writing", 1) };
     }
-    if (votableSeats(state).length === 0) return beginScores(applyScores(state), now);
-    return beginVote(state, now);
+    return beginReveal(filled, now);
   }
-  if (state.phase === "vote") return beginScores(applyScores(fillMissingVotes(state)), now);
-  if (state.phase === "scores") return nextRound(state, now);
+  if (state.phase === "reveal") return afterReveal(state, now);
+  if (state.phase === "voting") return beginResults(applyCurrentScore(state), now);
+  if (state.phase === "results") return afterResults(state, now);
+  if (state.phase === "leaderboard") return afterLeaderboard(state, now);
+  if (state.phase === "favorites") return finishGame(state);
   return state;
 }
 
-function beginTwist(state: RoomState, now: number): RoomState {
-  const twists = [...state.twists];
-  const kind = currentKind(state);
-  for (let seat = 0; seat < state.seats.length; seat += 1) {
-    const submission = submissionFor(state, seat);
-    const useless = kind !== "instagram" && !submission?.text;
-    if (!useless || twistFor(state, seat)) continue;
-    twists.push({
-      round: state.round,
-      seat,
-      twisterId: state.seats[twisterSeat(seat, state.seats.length)],
-      text: "",
-    });
+export function submit(state: RoomState, playerId: string, assignmentId: string, text: string, now: number): RoomState {
+  if (state.phase !== "writing") fail(state, "notWriting");
+  const assignment = state.assignments.find((item) => item.id === assignmentId);
+  if (!assignment || assignment.playerId !== playerId || assignment.round !== state.round || assignment.role !== stepRole(state)) {
+    fail(state, "notYourTask");
   }
-  return { ...state, twists, phase: "twist", ...schedule(state, now, "twist") };
-}
-
-function schedule(state: RoomState, now: number, phase: Phase) {
-  const ms = duration(phase, state.demo);
-  if (state.paused) return { paused: true, deadline: null, pauseRemaining: ms };
-  return { paused: false, deadline: now + ms, pauseRemaining: null };
-}
-
-function beginReveal(state: RoomState, now: number): RoomState {
-  if (revealOrder(state).length === 0) return beginScores(applyScores(state), now);
-  return { ...state, phase: "reveal", reveal: 0, ...schedule(state, now, "reveal") };
-}
-
-function beginVote(state: RoomState, now: number): RoomState {
-  return { ...state, phase: "vote", ...schedule(state, now, "vote") };
-}
-
-function beginScores(state: RoomState, now: number): RoomState {
-  return { ...state, phase: "scores", ...schedule(state, now, "scores") };
-}
-
-function nextRound(state: RoomState, now: number): RoomState {
-  if (state.round + 1 >= state.playlist.length) {
-    return { ...state, status: "finished", phase: "done", deadline: null, paused: false, pauseRemaining: null };
-  }
-  return {
-    ...state,
-    round: state.round + 1,
-    phase: "write",
-    reveal: 0,
-    ...schedule(state, now, "write"),
-  };
-}
-
-function fillMissingWrites(state: RoomState): RoomState {
-  const submissions = [...state.submissions];
-  state.seats.forEach((id, seat) => {
-    if (submissionFor(state, seat)) return;
-    const player = playerById(state, id);
-    submissions.push(player?.bot ? botSubmission(state, seat, id) : { round: state.round, seat, authorId: id, text: "", photo: defaultPhoto(state, seat) });
-  });
-  return { ...state, submissions };
-}
-
-function fillMissingTwists(state: RoomState): RoomState {
-  const twists = [...state.twists];
-  for (let seat = 0; seat < state.seats.length; seat += 1) {
-    if (twistFor(state, seat)) continue;
-    const twisterId = state.seats[twisterSeat(seat, state.seats.length)];
-    const player = playerById(state, twisterId);
-    twists.push(player?.bot ? botTwistEntry(state, seat, twisterId) : { round: state.round, seat, twisterId, text: "" });
-  }
-  return { ...state, twists };
-}
-
-function fillMissingVotes(state: RoomState): RoomState {
-  return state;
-}
-
-export function submitWrite(state: RoomState, playerId: string, text: string, photo: number | null, now: number): RoomState {
-  if (state.phase !== "write") throw new GameError("Сейчас не время писать");
-  const seat = state.seats.indexOf(playerId);
-  if (seat < 0) throw new GameError("Тебя нет в этой партии");
-  const kind = currentKind(state);
-  const card = currentCard(state, seat);
-  const max = limits(kind).write;
-  const clean = cleanText(text, max);
-  let chosen: number | null = null;
-  if (kind === "instagram") {
-    const count = card?.photos?.length ?? 0;
-    if (count === 0) chosen = null;
-    else if (photo === null || photo < 0 || photo >= count) throw new GameError("Выбери один из кадров");
-    else chosen = photo;
-  } else if (!clean) {
-    throw new GameError("Пустую строку не отправишь");
-  }
-  const submissions = state.submissions.filter((item) => !(item.round === state.round && item.seat === seat));
-  submissions.push({ round: state.round, seat, authorId: playerId, text: kind === "instagram" ? "" : clean, photo: chosen });
+  const clean = cleanText(text, taskLimit(assignment.role));
+  if (!clean) fail(state, "emptyText");
+  const submissions = state.submissions.filter((item) => item.assignmentId !== assignmentId);
+  submissions.push({ id: `sub-${assignmentId}`, assignmentId, playerId, text: clean, removed: false, hidden: false });
   return tick({ ...state, submissions }, now);
 }
 
-export function submitTwist(state: RoomState, playerId: string, text: string, now: number): RoomState {
-  if (state.phase !== "twist") throw new GameError("Сейчас не время выворачивать");
-  const seat = state.seats.indexOf(playerId);
-  if (seat < 0) throw new GameError("Тебя нет в этой партии");
-  const source = sourceSeatFor(seat, state.seats.length);
-  const kind = currentKind(state);
-  const clean = cleanText(text, limits(kind).twist);
-  if (!clean) throw new GameError(kind === "thread" ? "Пустой пост не отправишь" : "Пустой подкол не отправишь");
-  const twists = state.twists.filter((item) => !(item.round === state.round && item.seat === source));
-  twists.push({ round: state.round, seat: source, twisterId: playerId, text: clean });
-  return tick({ ...state, twists }, now);
-}
-
-export function submitVote(state: RoomState, playerId: string, seat: number, now: number): RoomState {
-  if (state.phase !== "vote") throw new GameError("Сейчас не время голосовать");
-  if (!votableSeats(state).includes(seat)) throw new GameError("За эту карточку нельзя голосовать");
-  const mine = blockedSeat(state, state.seats.indexOf(playerId));
-  if (seat === mine) throw new GameError(currentKind(state) === "thread" ? "Свой пост лайкнуть нельзя" : "За свой подкол голосовать нельзя");
-  const votes = state.votes.filter((item) => !(item.round === state.round && item.voterId === playerId));
-  votes.push({ round: state.round, voterId: playerId, seat });
+export function vote(state: RoomState, playerId: string, entryId: string, now: number): RoomState {
+  if (state.phase !== "voting") fail(state, "notVoting");
+  if (!legalEntryIds(state, playerId).includes(entryId)) fail(state, "cannotVote");
+  const contest = activeContest(state);
+  const votes = state.votes.filter((item) => !(item.contest === contest && item.voterId === playerId));
+  votes.push({ round: state.round, contest, voterId: playerId, entryId });
   return tick({ ...state, votes }, now);
 }
 
-export function currentKind(state: RoomState): RoundKind {
-  return state.playlist[state.round] ?? "thread";
+export function castFavorite(state: RoomState, playerId: string, entryId: string, now: number): RoomState {
+  if (state.phase !== "favorites") fail(state, "notFavorite");
+  if (!galleryIds(state).includes(entryId)) fail(state, "badEntry");
+  const favorites = state.favorites.filter((item) => item.voterId !== playerId);
+  favorites.push({ voterId: playerId, entryId });
+  return tick({ ...state, favorites }, now);
 }
 
-function currentCard(state: RoomState, seat: number): Card | undefined {
-  return cardAt(state, currentKind(state), seat);
-}
-
-function defaultPhoto(state: RoomState, seat: number): number | null {
-  if (currentKind(state) !== "instagram") return null;
-  const photos = currentCard(state, seat)?.photos;
-  return photos && photos.length > 0 ? 0 : null;
-}
-
-function botSubmission(state: RoomState, seat: number, id: string): Submission {
-  const kind = currentKind(state);
+export function removeSubmission(state: RoomState, submissionId: string): RoomState {
+  const submission = state.submissions.find((item) => item.id === submissionId);
+  const assignment = submission ? state.assignments.find((item) => item.id === submission.assignmentId) : undefined;
+  if (!submission || !assignment) fail(state, "noSubmission");
+  const contest = isDuel(state.config.playlist[assignment.round] ?? "ratio") ? duelId(assignment.round, assignment.prompt) : roundId(assignment.round);
+  const open = !state.scored.includes(contest);
   return {
-    round: state.round,
-    seat,
-    authorId: id,
-    text: kind === "instagram" ? "" : botWrite(kind, seat, state.round),
-    photo: kind === "instagram" ? defaultPhoto(state, seat) : null,
+    ...state,
+    submissions: state.submissions.map((item) => {
+      if (item.id !== submissionId) return item;
+      return open ? { ...item, removed: true, text: "" } : { ...item, hidden: true };
+    }),
   };
 }
 
-function botTwistEntry(state: RoomState, source: number, twisterId: string): Twist {
-  return {
-    round: state.round,
-    seat: source,
-    twisterId,
-    text: botTwist(currentKind(state), source, state.round),
-  };
+export function nextMatch(state: RoomState, now: number): RoomState {
+  if (state.phase !== "game_over") fail(state, "nextMatchLater");
+  const blank = freshRoom({
+    code: state.code,
+    hostToken: state.hostToken,
+    cap: state.cap,
+    demo: false,
+    now,
+    config: state.config,
+    match: state.match + 1,
+  });
+  return { ...blank, demo: state.demo, players: state.players, createdAt: state.createdAt };
 }
 
-export function submissionFor(state: RoomState, seat: number): Submission | undefined {
-  return state.submissions.find((item) => item.round === state.round && item.seat === seat);
+export function cleanName(raw: string, language: Language): string {
+  const name = raw.replace(/\s+/g, " ").trim();
+  if (name.length < 2 || name.length > 16) throw new GameError(t(language, "nameLength"));
+  return name;
 }
 
-export function twistFor(state: RoomState, seat: number): Twist | undefined {
-  return state.twists.find((item) => item.round === state.round && item.seat === seat);
-}
-
-function voteFor(state: RoomState, voterId: string): { seat: number } | undefined {
-  return state.votes.find((item) => item.round === state.round && item.voterId === voterId);
+export function cleanText(raw: string, max: number): string {
+  return raw.replace(/\s+/g, " ").trim().slice(0, max);
 }
 
 export function playerById(state: RoomState, id: string) {
   return state.players.find((player) => player.id === id);
 }
 
-export function revealOrder(state: RoomState): number[] {
-  const order: number[] = [];
-  for (let seat = 0; seat < state.seats.length; seat += 1) {
-    if (isShowable(state, seat)) order.push(seat);
-  }
-  return order;
+export function winnerIds(state: RoomState): string[] {
+  const best = Math.max(0, ...state.seats.map((id) => state.scores[id] ?? 0));
+  if (best <= 0) return [];
+  return state.seats.filter((id) => (state.scores[id] ?? 0) === best);
 }
 
-export function isShowable(state: RoomState, seat: number): boolean {
-  const twist = twistFor(state, seat);
-  if (!twist?.text) return false;
-  if (currentKind(state) === "instagram") return true;
-  return Boolean(submissionFor(state, seat)?.text);
-}
-
-export function votableSeats(state: RoomState): number[] {
-  return revealOrder(state);
-}
-
-function voterCanVote(state: RoomState, playerId: string): boolean {
-  const seat = state.seats.indexOf(playerId);
-  if (seat < 0) return false;
-  const forbidden = blockedSeat(state, seat);
-  return votableSeats(state).some((candidate) => candidate !== forbidden);
-}
-
-function botChoice(state: RoomState, playerId: string): number | null {
-  const seat = state.seats.indexOf(playerId);
-  const forbidden = blockedSeat(state, seat);
-  const options = votableSeats(state).filter((candidate) => candidate !== forbidden);
-  if (options.length === 0) return null;
-  return [...options].sort((a, b) => (twistFor(state, b)?.text.length ?? 0) - (twistFor(state, a)?.text.length ?? 0) || a - b)[0];
-}
-
-export function voteCounts(state: RoomState): Map<number, number> {
-  const counts = new Map<number, number>();
-  for (const vote of state.votes) {
-    if (vote.round !== state.round) continue;
-    counts.set(vote.seat, (counts.get(vote.seat) ?? 0) + 1);
-  }
-  return counts;
-}
-
-export function scoreRound(state: RoomState): ScoreEvent[] {
-  if (state.log.some((event) => event.round === state.round)) return [];
-  const counts = voteCounts(state);
-  const max = Math.max(0, ...counts.values());
-  const leaders = [...counts.entries()].filter(([, count]) => count === max && count > 0);
-  const best = leaders.length === 1 ? leaders[0][0] : null;
-  const finale = state.round === state.playlist.length - 1;
-  const reply = currentKind(state) === "thread";
-  const events: ScoreEvent[] = [];
-  for (const [seat, count] of counts) {
-    if (!count) continue;
-    const twist = twistFor(state, seat);
-    if (!twist?.text) continue;
-    const isBest = seat === best;
-    const finaleMark = finale ? " · финал ×2" : "";
-    if (reply) {
-      const authorId = submissionFor(state, seat)?.authorId;
-      const share = count * 50 + (isBest ? 100 : 0);
-      const delta = finale ? share * 2 : share;
-      const marks = `${count} ${plural(count, "лайк", "лайка", "лайков")}`;
-      const tail = `${isBest ? " и больше всех" : ""}${finaleMark}`;
-      if (authorId) events.push({ round: state.round, playerId: authorId, delta, reason: `${marks} за реплай${tail}` });
-      events.push({ round: state.round, playerId: twist.twisterId, delta, reason: `${marks} за пост${tail}` });
-      continue;
+export function galleryIds(state: RoomState): string[] {
+  const ids: string[] = [];
+  state.config.playlist.forEach((mode, round) => {
+    const count = state.prompts[round]?.length ?? 0;
+    for (let prompt = 0; prompt < count; prompt += 1) {
+      if (isDuel(mode)) {
+        if (duelOutcome(state, round, prompt) !== "empty") ids.push(duelId(round, prompt));
+        continue;
+      }
+      const entry = sharedEntries(state, round)[prompt];
+      if (entry?.sides.some((side) => side.text)) ids.push(entry.id);
     }
-    const raw = count * 100 + (isBest ? 200 : 0);
-    const delta = finale ? raw * 2 : raw;
-    const marks = `${count} ${plural(count, "голос", "голоса", "голосов")}`;
-    const reason = `${marks}${isBest ? " и лучший подкол" : ""}${finaleMark}`;
-    events.push({ round: state.round, playerId: twist.twisterId, delta, reason });
+  });
+  return ids;
+}
+
+function addDemoBots(state: RoomState, now: number): RoomState {
+  const names = botNames(state.config.language);
+  const players: Player[] = names.slice(0, 4).map((name, index) => ({
+    id: `bot-${index}-${state.code}`,
+    token: `bot-token-${index}-${state.code}`,
+    name,
+    color: PALETTE[index],
+    bot: true,
+    host: false,
+    joinedAt: now + index,
+  }));
+  return { ...state, players };
+}
+
+function attachImages(accounts: AccountDraft[], groups: ImageGroup[], random: () => number): FictionalAccount[] {
+  const queues = groups.map((group) => shuffle(group.images, random));
+  const cursor = groups.map(() => 0);
+  return accounts.map((account, index) => {
+    const group = account.avatarGroup;
+    const image = queues[group]?.[cursor[group] ?? 0] ?? null;
+    if (queues[group]) cursor[group] += 1;
+    return { ...account, image, color: PALETTE[index % PALETTE.length] };
+  });
+}
+
+function applyBotMoves(state: RoomState, now: number): RoomState {
+  if (!botReady(state, now)) return state;
+  if (state.phase === "writing") return fillMissingBots(state);
+  if (state.phase !== "voting") return state;
+  let votes = state.votes;
+  let changed = false;
+  for (const id of state.seats) {
+    const player = playerById(state, id);
+    const contest = activeContest(state);
+    if (!player?.bot || votes.some((vote) => vote.contest === contest && vote.voterId === id)) continue;
+    const options = legalEntryIds(state, id);
+    if (options.length === 0) continue;
+    const choice = [...options].sort((a, b) => entryLength(state, b) - entryLength(state, a) || (a < b ? -1 : 1))[0];
+    votes = [...votes, { round: state.round, contest, voterId: id, entryId: choice }];
+    changed = true;
   }
-  return events;
+  return changed ? { ...state, votes } : state;
 }
 
-function applyScores(state: RoomState): RoomState {
-  const events = scoreRound(state);
-  if (events.length === 0) return state;
+function fillMissingBots(state: RoomState): RoomState {
+  if (state.phase !== "writing") return state;
+  const role = stepRole(state);
+  let submissions = state.submissions;
+  let changed = false;
+  for (const assignment of state.assignments) {
+    if (assignment.round !== state.round || assignment.role !== role) continue;
+    if (submissions.some((item) => item.assignmentId === assignment.id)) continue;
+    const player = playerById(state, assignment.playerId);
+    if (!player?.bot) continue;
+    const salt = state.round * 10 + assignment.prompt + assignment.slot;
+    submissions = [
+      ...submissions,
+      {
+        id: `sub-${assignment.id}`,
+        assignmentId: assignment.id,
+        playerId: assignment.playerId,
+        text: botLine(state.config.language, role, salt),
+        removed: false,
+        hidden: false,
+      },
+    ];
+    changed = true;
+  }
+  return changed ? { ...state, submissions } : state;
+}
+
+function entryLength(state: RoomState, entryId: string): number {
+  const match = /^e(\d+)-(\d+)-(\d+)$/.exec(entryId) ?? /^s(\d+)-(\d+)$/.exec(entryId);
+  if (!match) return 0;
+  const round = Number(match[1]);
+  const prompt = Number(match[2]);
+  if (match.length === 4) {
+    const slot = Number(match[3]);
+    return submissionFor(state, `a${round}p${prompt}s${slot}`)?.text.length ?? 0;
+  }
+  const left = submissionFor(state, `a${round}p${prompt}s0`)?.text.length ?? 0;
+  const right = submissionFor(state, `a${round}p${prompt}s1`)?.text.length ?? 0;
+  return left + right;
+}
+
+function botReady(state: RoomState, now: number): boolean {
+  if (!state.deadline) return false;
+  if (state.phase !== "writing" && state.phase !== "voting") return false;
+  return now >= state.deadline - duration(state) + 1200;
+}
+
+function shouldAdvance(state: RoomState, now: number): boolean {
+  if (state.debug || state.paused) return false;
+  if (state.phase === "reveal" || state.phase === "results" || state.phase === "round_intro" || state.phase === "leaderboard" || state.phase === "favorites") {
+    return Boolean(state.deadline && now >= state.deadline);
+  }
+  if (state.phase === "writing" || state.phase === "voting") return phaseComplete(state) || Boolean(state.deadline && now >= state.deadline);
+  return false;
+}
+
+function phaseComplete(state: RoomState): boolean {
+  if (state.phase === "writing") {
+    const role = stepRole(state);
+    return state.assignments
+      .filter((item) => item.round === state.round && item.role === role)
+      .every((item) => state.submissions.some((submission) => submission.assignmentId === item.id));
+  }
+  if (state.phase === "voting") {
+    const contest = activeContest(state);
+    return state.seats.every((id) => legalEntryIds(state, id).length === 0 || state.votes.some((vote) => vote.contest === contest && vote.voterId === id));
+  }
+  return false;
+}
+
+function afterReveal(state: RoomState, now: number): RoomState {
+  if (isDuel(currentMode(state))) {
+    const outcome = duelOutcome(state, state.round, currentPromptIndex(state));
+    if (outcome !== "contest") return beginResults(applyCurrentScore(state), now);
+    return beginVoting(state, now);
+  }
+  if (!sharedEntries(state, state.round).some((entry) => entry.votable)) return beginResults(applyCurrentScore(state), now);
+  return beginVoting(state, now);
+}
+
+function afterResults(state: RoomState, now: number): RoomState {
+  const count = state.prompts[state.round]?.length ?? 0;
+  if (isDuel(currentMode(state)) && state.contest + 1 < count) {
+    const next = { ...state, contest: state.contest + 1, phase: "reveal" as const };
+    return { ...next, ...schedule(next, now, "reveal") };
+  }
+  return beginLeaderboard(applyViral(state), now);
+}
+
+function afterLeaderboard(state: RoomState, now: number): RoomState {
+  if (state.round + 1 < state.config.playlist.length) {
+    const next = { ...state, round: state.round + 1, contest: 0, writeStep: 0, phase: "round_intro" as const };
+    return { ...next, ...schedule(next, now, "round_intro") };
+  }
+  const next = { ...state, phase: "favorites" as const };
+  return { ...next, ...schedule(next, now, "favorites") };
+}
+
+function beginWriting(state: RoomState, now: number): RoomState {
+  const next = { ...state, phase: "writing" as const, writeStep: 0 };
+  return { ...next, ...schedule(next, now, "writing", 0) };
+}
+
+function beginReveal(state: RoomState, now: number): RoomState {
+  const next = { ...state, phase: "reveal" as const, contest: 0 };
+  return { ...next, ...schedule(next, now, "reveal") };
+}
+
+function beginVoting(state: RoomState, now: number): RoomState {
+  const next = { ...state, phase: "voting" as const };
+  return { ...next, ...schedule(next, now, "voting") };
+}
+
+function beginResults(state: RoomState, now: number): RoomState {
+  const next = { ...state, phase: "results" as const };
+  return { ...next, ...schedule(next, now, "results") };
+}
+
+function beginLeaderboard(state: RoomState, now: number): RoomState {
+  const next = { ...state, phase: "leaderboard" as const };
+  return { ...next, ...schedule(next, now, "leaderboard") };
+}
+
+function finishGame(state: RoomState): RoomState {
+  const key = "chronic";
+  const next = state.scored.includes(key)
+    ? state
+    : { ...state, badges: [...state.badges, ...chronicBadges(state)], scored: [...state.scored, key] };
+  return { ...next, status: "finished", phase: "game_over", deadline: null, paused: false, pauseRemaining: null };
+}
+
+function applyCurrentScore(state: RoomState): RoomState {
+  const result = scoreContest(state);
+  if (state.scored.includes(result.contest)) return state;
+  return applyAwards(state, result.events, result.badges, result.contest);
+}
+
+function applyViral(state: RoomState): RoomState {
+  const key = `viral-${state.round}`;
+  if (state.scored.includes(key)) return state;
+  return applyAwards(state, [], viralBadges(state, state.round), key);
+}
+
+function applyAwards(state: RoomState, events: ScoreEvent[], badges: Badge[], key: string): RoomState {
   const scores = { ...state.scores };
-  for (const event of events) scores[event.playerId] = (scores[event.playerId] ?? 0) + event.delta;
-  return { ...state, scores, log: [...state.log, ...events] };
+  for (const item of events) scores[item.playerId] = (scores[item.playerId] ?? 0) + item.delta;
+  return { ...state, scores, log: [...state.log, ...events], badges: [...state.badges, ...badges], scored: [...state.scored, key] };
 }
 
-export function shownCard(state: RoomState, seat: number): ShownCard | null {
-  const author = playerById(state, state.seats[seat] ?? "");
-  const twist = twistFor(state, seat);
-  const submission = submissionFor(state, seat);
-  const card = currentCard(state, seat);
-  if (!author || !card) return null;
-  const twister = twist ? playerById(state, twist.twisterId) : undefined;
-  const photo =
-    currentKind(state) === "instagram" && submission?.photo !== null && submission?.photo !== undefined
-      ? card.photos?.[submission.photo] ?? null
-      : null;
-  const counts = voteCounts(state);
-  return {
-    seat,
-    kind: currentKind(state),
-    authorName: author.name,
-    authorColor: author.color,
-    twisterName: twister?.name ?? "",
-    write: submission?.text ?? "",
-    twist: twist?.text ?? "",
-    photo,
-    topic: card.topic,
-    votable: isShowable(state, seat),
-    votes: counts.get(seat) ?? 0,
-  };
+function schedule(state: RoomState, now: number, phase: Phase, writeStep = state.writeStep) {
+  const ms = duration({ ...state, phase, writeStep });
+  if (state.paused) return { paused: true, deadline: null, pauseRemaining: ms };
+  return { paused: false, deadline: now + ms, pauseRemaining: null };
 }
 
-export function winners(state: RoomState): string[] {
-  const totals = state.seats.map((id) => ({ id, score: state.scores[id] ?? 0 }));
-  const best = Math.max(-1, ...totals.map((item) => item.score));
-  return totals.filter((item) => item.score === best && best > 0).map((item) => playerById(state, item.id)?.name ?? "");
+function fail(state: RoomState, key: string): never {
+  throw new GameError(t(state.config.language, key));
 }

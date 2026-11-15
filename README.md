@@ -1,42 +1,47 @@
-# Кривой репост
+# Digital Footprint
 
-Вечеринка в браузере. Один экран на телевизоре, остальные со своих телефонов. Сервер ведёт комнату: ноутбук-клиент не нужен.
+A browser party game. Phones play, a shared screen can show the room, and the server keeps the clock.
 
-Игрок пишет обычную фразу. Другой вставляет её в чужой интерфейс: чат, вакансию, объявление, поиск, отзыв, ролик, ответ нейросети или подпись к фото. Комната голосует. Очки получает тот, кто вывернул фразу: 100 за голос и 200, если карточка одна впереди. В четвёртом, финальном раунде оба числа удваиваются.
+Players reply, leak a chat, explain a scandal, or write half of a meme. The room votes with likes. The model writes the setups once, before play, and then stays quiet.
 
-В Эхо сначала дописывают реплай под заготовку поста. Потом каждому отдают чужой реплай, и он решает, под какой пост его поставить. Комната ставит лайки. Пара получает те же 100 за лайк и 200 за отрыв, что и карточка в других режимах, только поровну: автору реплая и автору поста. Финал удваивает и эти доли.
+## How to play
 
-## Как играть
+1. Create a room for 4 to 8 people.
+2. Open the screen on a TV, or stay on one phone.
+3. Everyone joins with a nickname. The host picks the language (English or Russian), the intensity, what to leave out, and the playlist.
+4. Start. The server freezes the roster, asks the model once, and looks up avatars.
+5. Play 2 to 5 rounds. Doomscroll is just the order of RATIO, Leaked DMs, Explain Yourself, and Sabotage.
 
-1. На телефоне создай комнату и укажи, на сколько человек собирать колоду (от 3 до 8).
-2. На телевизоре открой тот же сайт и нажми «Экран», введи код. Либо с телефона создателя открой ссылку «Открыть экран здесь» и выведи вкладку на телевизор.
-3. Остальные сканируют QR или входят по коду.
-4. Пока люди представляются, сервер готовит заходы и ищет фото. «Начать» включается, когда колода готова и в комнате хотя бы трое.
-5. Если кто-то ещё хочет зайти, создатель увеличивает число мест. Догоняется только разница.
+A sample room seats four bots and starts on its own.
 
-«Посмотреть пример» запускает комнату из трёх ботов, чтобы увидеть раунды без компании.
+## Rules
 
-Рулетка при создании комнаты выбирает 4 режима из девяти. Последний из них — финал. После финала «Ещё катка» крутит следующие четыре и не берёт режимы, которые в этой комнате уже были. Когда свежих остаётся меньше четырёх, в колоду добираются самые давние, а только что сыгранные остаются в стороне. Если режим выпал снова, заходы для него пишутся заново.
+Likes are the only score. People vote. The model never judges.
 
-У каждого типа один свой интерфейс: Весточка, Эхо, Смена, Лавка, Находка, Метка, Показ, Подсказка, Витрина. Названия похожи на знакомые сервисы и ни одно из них их не повторяет.
+- RATIO and Explain Yourself: two players answer the same setup. A 1,000-like pool splits by the votes. One lonely answer gets 500. Matching answers score nothing.
+- Leaked DMs: an ordinary answer, then someone else writes the message that makes it worse. Each vote pays 800 to the setup and 200 to the answer. A missing partner does not get the other share.
+- Sabotage: two halves, joined by a template. Each vote pays 500 and 500, with the same missing-partner rule.
+- The final-round doubler exists and is off unless the host turns it on.
 
-## Откуда контент
+Badges are cosmetic. Favorites at the end do not change the score. The gallery is fictional and lives only as long as the room.
 
-Заходы пишет модель одним запросом на комнату, пока открыто лобби. Ключ остаётся на сервере:
+## Content
+
+One model call per match, with no retry. A bad response is filled from the bundled text bank, so the room can still play.
 
 - `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` (необязательно, по умолчанию OpenAI)
-- `OPENAI_MODEL` (необязательно, по умолчанию `gpt-4o-mini`)
+- `OPENAI_BASE_URL` (optional)
+- `OPENAI_MODEL` (optional, default `gpt-4o-mini`)
 
-Без ключа игра берёт запасной набор своих заходов. Фото в обоих случаях ищутся в интернете: сначала Openverse, если он молчит — Wikimedia Commons. Адрес, автор и лицензия сохраняются в комнате, картинку грузит браузер. Поиск кэшируется, повтор той же фразы не ходит в сеть.
+Avatars come from Openverse only, at most six grouped searches. There is no saved image library. A failed lookup becomes a colored initials circle. The game is playable with no image provider and no model key.
 
-## Запуск
+## Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Сайт откроется на порту 4179. Тесты правил: `npm test`.
+The site listens on port 4179. Rules tests: `npm test`.
 
-Опубликованная игра хранит комнаты в Postgres. Локально без `DATABASE_URL` используется встроенный PGlite в памяти процесса: после перезапуска сервера комнаты пропадают.
+Published rooms live in Postgres. Locally, without `DATABASE_URL`, the process keeps them in memory and they disappear on restart.

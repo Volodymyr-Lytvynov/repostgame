@@ -6,7 +6,7 @@ import type { ClientView } from "@/lib/game/types";
 export type Session = { hostToken?: string; playerToken?: string };
 
 export function sessionKey(code: string) {
-  return `krivoy:${code}`;
+  return `footprint:${code}`;
 }
 
 export function readSession(code: string): Session {
@@ -35,7 +35,7 @@ export function useRoom(code: string, token: string | null) {
       });
       const body = (await response.json()) as ClientView & { error?: string };
       if (!response.ok) {
-        setError(body.error ?? "Комната не открылась");
+        setError(body.error ?? "Couldn't open the room");
         return;
       }
       setError(null);
@@ -71,7 +71,7 @@ export function useRoom(code: string, token: string | null) {
         body: JSON.stringify(action),
       });
       const body = (await response.json()) as ClientView & { error?: string; playerToken?: string };
-      if (!response.ok) throw new Error(body.error ?? "Не вышло");
+      if (!response.ok) throw new Error(body.error ?? "That didn't work");
       setView(body);
       return body;
     },
@@ -79,4 +79,21 @@ export function useRoom(code: string, token: string | null) {
   );
 
   return { view, error, offline, send, refresh };
+}
+
+export function useClock(serverNow: number | undefined) {
+  const [now, setNow] = useState(() => serverNow ?? Date.now());
+  useEffect(() => {
+    if (!serverNow) return;
+    const offset = serverNow - Date.now();
+    setNow(Date.now() + offset);
+    const id = window.setInterval(() => setNow(Date.now() + offset), 250);
+    return () => window.clearInterval(id);
+  }, [serverNow]);
+  return now;
+}
+
+export function secondsLeft(deadline: number | null, now: number): number | null {
+  if (deadline === null) return null;
+  return Math.max(0, Math.ceil((deadline - now) / 1000));
 }

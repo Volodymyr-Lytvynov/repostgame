@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { t } from "@/lib/game/i18n";
 import type { ClientView } from "@/lib/game/types";
 
 export function DebugBar({
@@ -11,14 +12,15 @@ export function DebugBar({
   send: (action: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const playing = view.phase !== "lobby" && view.phase !== "done";
+  const language = view.config.language;
+  const playing = view.phase !== "lobby" && view.phase !== "game_over";
 
   async function run(action: Record<string, unknown>) {
     setError(null);
     try {
       await send(action);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не вышло");
+      setError(caught instanceof Error ? caught.message : t(language, "roomDown"));
     }
   }
 
@@ -26,23 +28,17 @@ export function DebugBar({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Control on={!view.debug} onClick={() => void run({ type: "debug", on: !view.debug })}>
-          {view.debug ? "Выключить проверку" : "Режим проверки"}
+          {view.debug ? t(language, "checkOff") : t(language, "check")}
         </Control>
-        {view.debug && view.phase === "lobby" ? <Control onClick={() => void run({ type: "bot" })}>Добавить бота</Control> : null}
+        {view.debug && view.phase === "lobby" ? <Control onClick={() => void run({ type: "bot" })}>{t(language, "addBot")}</Control> : null}
         {playing ? (
           <Control onClick={() => void run({ type: view.paused ? "resume" : "pause" })}>
-            {view.paused ? "Продолжить" : "Пауза"}
+            {view.paused ? t(language, "resume") : t(language, "pause")}
           </Control>
         ) : null}
-        {playing ? <Control onClick={() => void run({ type: "skip" })}>Дальше</Control> : null}
+        {playing ? <Control onClick={() => void run({ type: "skip" })}>{t(language, "skip")}</Control> : null}
       </div>
-      {view.debug ? (
-        <p className="text-center text-sm text-white/55">
-          {view.paused
-            ? "Пауза: таймер и боты стоят. «Дальше» откроет следующий шаг и тоже оставит паузу."
-            : "Проверка: фаза сама не сменится. «Дальше» — следующий шаг, «Пауза» останавливает ботов."}
-        </p>
-      ) : null}
+      {view.debug ? <p className="text-center text-sm text-white/55">{view.paused ? t(language, "pausedHint") : t(language, "checkHint")}</p> : null}
       {error ? <p className="text-center text-sm text-[#ff8d72]">{error}</p> : null}
     </div>
   );

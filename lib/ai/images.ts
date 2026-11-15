@@ -1,47 +1,21 @@
-import { sql } from "../db";
-import type { Photo } from "../game/types";
+import { capQueries } from "../game/images";
+import { shuffle } from "../game/random";
+import type { ImageGroup, ResolvedImage } from "../game/types";
 
-type CacheRow = { photos: Photo[] | string };
+export { capQueries };
 
-export async function searchPhotos(query: string): Promise<Photo[]> {
-  const key = query.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 80);
+export async function searchOpenverse(query: string): Promise<ResolvedImage[]> {
+  const key = query.replace(/\s+/g, " ").trim().slice(0, 80);
   if (!key) return [];
-  const cached = await sql<CacheRow>("select photos from image_cache where query = $1", [key]);
-  const hit = cached[0]?.photos;
-  if (hit) return typeof hit === "string" ? (JSON.parse(hit) as Photo[]) : hit;
-
-  const direct = await searchAnywhere(key);
-  const photos =
-    direct.length >= 2
-      ? direct.slice(0, 2)
-      : dedupe([...direct, ...(await searchAnywhere(key.split(" ").slice(0, 2).join(" ")))]).slice(0, 2);
-  if (photos.length > 0) {
-    await sql("insert into image_cache (query, photos) values ($1, $2::jsonb) on conflict (query) do nothing", [
-      key,
-      JSON.stringify(photos),
-    ]);
-  }
-  return photos;
-}
-
-async function searchAnywhere(query: string): Promise<Photo[]> {
-  if (!query.trim()) return [];
-  const openverse = await searchOpenverse(query);
-  if (openverse.length >= 2) return openverse;
-  const commons = await searchCommons(query);
-  return dedupe([...openverse, ...commons]);
-}
-
-async function searchOpenverse(query: string): Promise<Photo[]> {
   const url = new URL("https://api.openverse.org/v1/images/");
-  url.searchParams.set("q", query);
-  url.searchParams.set("page_size", "10");
+  url.searchParams.set("q", key);
+  url.searchParams.set("page_size", "12");
   url.searchParams.set("mature", "false");
   try {
     const response = await fetch(url, {
       headers: {
         accept: "application/json",
-        "user-agent": "KrivoyRepost/1.0 (party game)",
+        "user-agent": "DigitalFootprint/0.3 (party game; image search)",
       },
       signal: AbortSignal.timeout(8000),
     });
@@ -57,8 +31,8 @@ async function searchOpenverse(query: string): Promise<Photo[]> {
       }>;
     };
     return (body.results ?? []).flatMap((item) => {
-      if (item.mature || !item.url?.startsWith("https://")) return [];
-      const photo = toPhoto(item.url, item.thumbnail, item.creator, item.license, item.foreign_landing_url);
+      if (item.mature || !item.license?.trim()) return [];
+      const photo = toImage(item.url, item.thumbnail, item.creator, item.license, item.foreign_landing_url);
       return photo ? [photo] : [];
     });
   } catch {
@@ -66,81 +40,53 @@ async function searchOpenverse(query: string): Promise<Photo[]> {
   }
 }
 
-async function searchCommons(query: string): Promise<Photo[]> {
-  const url = new URL("https://commons.wikimedia.org/w/api.php");
-  url.searchParams.set("action", "query");
-  url.searchParams.set("format", "json");
-  url.searchParams.set("generator", "search");
-  url.searchParams.set("gsrsearch", `${query} filetype:bitmap`);
-  url.searchParams.set("gsrnamespace", "6");
-  url.searchParams.set("gsrlimit", "8");
-  url.searchParams.set("prop", "imageinfo");
-  url.searchParams.set("iiprop", "url|extmetadata");
-  url.searchParams.set("iiurlwidth", "960");
-  try {
-    const response = await fetch(url, {
-      headers: { "user-agent": "KrivoyRepost/1.0 (party game; image search)" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) return [];
-    const body = (await response.json()) as {
-      query?: {
-        pages?: Record<
-          string,
-          {
-            imageinfo?: Array<{
-              thumburl?: string;
-              descriptionshorturl?: string;
-              extmetadata?: { Artist?: { value?: string }; LicenseShortName?: { value?: string } };
-            }>;
-          }
-        >;
-      };
-    };
-    return Object.values(body.query?.pages ?? {}).flatMap((page) => {
-      const info = page.imageinfo?.[0];
-      const photo = toPhoto(
-        info?.thumburl,
-        info?.thumburl,
-        stripTags(info?.extmetadata?.Artist?.value),
-        info?.extmetadata?.LicenseShortName?.value,
-        info?.descriptionshorturl,
-      );
-      return photo ? [photo] : [];
-    });
-  } catch {
-    return [];
-  }
-}
-
-function toPhoto(
-  url: string | undefined,
-  thumb: string | undefined,
-  author: string | undefined,
-  license: string | undefined,
-  page: string | undefined,
-): Photo | null {
-  if (!url?.startsWith("https://")) return null;
-  if (/\.(svg|gif)(\?|$)/i.test(url)) return null;
-  const safeThumb = thumb?.startsWith("https://") ? thumb : url;
-  return {
-    url,
-    thumb: safeThumb,
-    author: (author || "неизвестен").replace(/\s+/g, " ").trim().slice(0, 80),
-    license: (license || "CC").replace(/\s+/g, " ").trim().slice(0, 40),
-    page: page?.startsWith("https://") ? page : "",
-  };
-}
-
-function dedupe(photos: Photo[]): Photo[] {
-  const seen = new Set<string>();
-  return photos.filter((photo) => {
-    if (seen.has(photo.url)) return false;
-    seen.add(photo.url);
-    return true;
+export async function fillImageGroups(groups: readonly ImageGroup[], budget: number, random: () => number): Promise<ImageGroup[]> {
+  const found = await resolveImageGroups(
+    groups.map((group) => group.query),
+    budget,
+  );
+  return groups.map((group) => {
+    const key = group.query.toLowerCase().replace(/\s+/g, " ").trim();
+    return { ...group, images: shuffle(found.get(key) ?? [], random).slice(0, 8) };
   });
 }
 
-function stripTags(value: string | undefined): string {
-  return (value ?? "").replace(/<[^>]+>/g, " ");
+async function resolveImageGroups(queries: readonly string[], budget: number): Promise<Map<string, ResolvedImage[]>> {
+  const capped = capQueries(queries, budget);
+  const found = new Map<string, ResolvedImage[]>();
+  await Promise.all(
+    capped.map(async (query) => {
+      found.set(query, await searchOpenverse(query));
+    }),
+  );
+  return found;
+}
+
+function toImage(url: string | undefined, thumb: string | undefined, author: string | undefined, license: string | undefined, page: string | undefined): ResolvedImage | null {
+  if (!publicHttps(url) || !license?.trim()) return null;
+  const safeThumb = publicHttps(thumb) ? thumb : url;
+  if (!safeThumb) return null;
+  return {
+    url: url ?? safeThumb,
+    thumb: safeThumb,
+    author: (author || "unknown").replace(/\s+/g, " ").trim().slice(0, 80),
+    license: license.replace(/\s+/g, " ").trim().slice(0, 40),
+    source: page && publicHttps(page) ? page : "",
+  };
+}
+
+function publicHttps(value: string | undefined): value is string {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+    if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.0\.0\.0)/.test(host)) return false;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(host)) return false;
+    if (/\.svg($|\?)/i.test(url.pathname)) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }

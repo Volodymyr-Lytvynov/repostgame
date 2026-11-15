@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import { BadgeList, FeedCardView, ModeIntro } from "@/components/site-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { handleOf, roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
-import { phaseLabel } from "@/lib/game/view";
-import type { ClientView, PlayerTask, RoundKind } from "@/lib/game/types";
+import { t } from "@/lib/game/i18n";
+import type { ClientView, FeedCard, GameConfig, Mode, PlayerTask } from "@/lib/game/types";
 import { DebugBar } from "./debug-bar";
-import { SiteCard, EchoAvatar, EchoName, EchoShell } from "./site-card";
 import { QrImage } from "./qr-image";
-import { readSession, useRoom, writeSession } from "./use-room";
+import { readSession, secondsLeft, useClock, useRoom, writeSession } from "./use-room";
 
 export function PhoneApp({ code }: { code: string }) {
   const [token, setToken] = useState<string | null>(null);
@@ -21,19 +20,29 @@ export function PhoneApp({ code }: { code: string }) {
     setReady(true);
   }, [code]);
   const room = useRoom(code, ready ? token : null);
-  if (!ready || !room.view && !room.error) {
-    return <PhoneShell><p>Подключаемся…</p></PhoneShell>;
-  }
+  if (!ready || (!room.view && !room.error)) return <PhoneShell><p>{t("en", "connecting")}</p></PhoneShell>;
   if (room.error && !room.view) {
-    return <PhoneShell><p className="text-xl">{room.error}</p><Link className="mt-4 underline" href="/">На главную</Link></PhoneShell>;
+    return (
+      <PhoneShell>
+        <p className="text-xl">{room.error}</p>
+        <Link className="mt-4 underline" href="/">{t("en", "home")}</Link>
+      </PhoneShell>
+    );
   }
-  if (!room.view) return <PhoneShell><p>Подключаемся…</p></PhoneShell>;
+  if (!room.view) return <PhoneShell><p>{t("en", "connecting")}</p></PhoneShell>;
   if (!room.view.you) {
-    return <Join code={code} view={room.view} token={token} onJoined={(playerToken) => {
-      const session = { ...readSession(code), playerToken };
-      writeSession(code, session);
-      setToken(playerToken);
-    }} send={room.send} />;
+    return (
+      <Join
+        code={code}
+        view={room.view}
+        token={token}
+        onJoined={(playerToken) => {
+          writeSession(code, { ...readSession(code), playerToken });
+          setToken(playerToken);
+        }}
+        send={room.send}
+      />
+    );
   }
   return <Controller code={code} view={room.view} offline={room.offline} send={room.send} />;
 }
@@ -51,14 +60,15 @@ function Join({
   onJoined: (token: string) => void;
   send: (action: Record<string, unknown>, auth?: string | null) => Promise<ClientView & { playerToken?: string }>;
 }) {
+  const language = view.config.language;
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   return (
     <PhoneShell>
-      <p className="text-sm uppercase tracking-[0.16em] text-white/50">Комната {code}</p>
-      <h1 className="mt-2 text-3xl font-semibold">Как тебя записать?</h1>
-      <p className="mt-2 text-white/65">Имя увидят на экране. От 2 до 16 символов.</p>
+      <p className="text-sm uppercase tracking-[0.16em] text-white/50">{code}</p>
+      <h1 className="mt-2 text-3xl font-semibold">{t(language, "yourName")}</h1>
+      <p className="mt-2 text-white/65">{t(language, "nameHint")}</p>
       <form
         className="mt-6 space-y-3"
         onSubmit={async (event) => {
@@ -69,19 +79,18 @@ function Join({
             const body = await send({ type: "join", name }, token);
             if (body.playerToken) onJoined(body.playerToken);
           } catch (caught) {
-            setError(caught instanceof Error ? caught.message : "Не вышло войти");
+            setError(caught instanceof Error ? caught.message : t(language, "roomDown"));
           } finally {
             setPending(false);
           }
         }}
       >
-        <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Оля" maxLength={16} className="h-12 bg-white/5 px-3 text-base text-white md:text-base" />
+        <Input value={name} onChange={(event) => setName(event.target.value)} maxLength={16} className="h-12 bg-white/5 px-3 text-base text-white md:text-base" />
         {error ? <p className="text-sm text-[#ff8d72]">{error}</p> : null}
         <Button type="submit" disabled={pending || name.trim().length < 2} className="h-12 w-full rounded-xl text-base">
-          {pending ? "Входим…" : "Войти"}
+          {t(language, "join")}
         </Button>
       </form>
-      <p className="mt-6 text-sm text-white/50">{view.players.length} из {view.cap} уже внутри</p>
     </PhoneShell>
   );
 }
@@ -97,332 +106,300 @@ function Controller({
   offline: boolean;
   send: (action: Record<string, unknown>) => Promise<unknown>;
 }) {
+  const language = view.config.language;
   const now = useClock(view.serverNow);
-  const left = view.deadline ? Math.max(0, Math.ceil((view.deadline - now) / 1000)) : null;
-  const finale = view.kind === "instagram" && view.round === view.roundCount - 1;
+  const left = secondsLeft(view.deadline, now);
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
   return (
     <PhoneShell>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-white/50">{view.phase === "lobby" ? `Комната ${code}` : `${roundTitle(view.kind ?? "thread")} · ${view.round + 1}/${view.roundCount}`}</p>
-          <h1 className="text-2xl font-semibold">{view.phase === "lobby" ? "Ждём игроков" : phaseLabel(view.phase, view.kind)}</h1>
-          {finale && view.phase !== "done" ? <p className="text-sm text-[#ffb020]">Финал, очки ×2</p> : null}
+          <p className="text-xs uppercase tracking-[0.16em] text-white/45">{code}</p>
+          <h1 className="text-2xl font-semibold">{view.mode ? t(language, `mode_${view.mode}`) : "Digital Footprint"}</h1>
+          {view.phase !== "lobby" ? <p className="text-sm text-white/55">{t(language, "roundOf", { round: view.round + 1, total: view.roundCount })}</p> : null}
         </div>
-        {view.paused ? <div className="text-3xl font-semibold text-[#ffb020]">Пауза</div> : null}
-        {!view.paused && left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-3xl font-semibold tabular-nums">{left}</div> : null}
+        {left !== null && !view.paused ? <p className="text-3xl font-semibold tabular-nums">{left}</p> : null}
+        {view.paused ? <p className="text-xl text-[#ffb020]">{t(language, "pause")}</p> : null}
       </header>
-      {offline ? <p className="mt-3 text-sm text-[#ffb020]">Нет связи. Пробуем ещё.</p> : null}
-      <div className="mt-6">
-        {view.phase === "lobby" ? <LobbyPhone code={code} view={view} send={send} /> : null}
-        {view.you?.task?.phase === "write" ? <WriteForm task={view.you.task} send={send} /> : null}
-        {view.you?.task?.phase === "twist" ? <TwistForm task={view.you.task} send={send} /> : null}
-        {view.you?.task?.phase === "vote" ? <VoteForm task={view.you.task} send={send} /> : null}
-        {view.phase !== "lobby" && !view.you?.task ? <Waiting view={view} /> : null}
-        {view.phase === "done" ? <Done view={view} send={send} /> : null}
+      {offline ? <p className="mt-3 text-sm text-[#ffb020]">{t(language, "offline")}</p> : null}
+      <div className="mt-5 flex flex-1 flex-col gap-4">
+        {view.phase === "lobby" ? <Lobby view={view} origin={origin} send={send} /> : null}
+        {view.phase === "generating" ? <p className="text-lg text-white/70">{t(language, "generatingHint")}</p> : null}
+        {view.phase === "round_intro" && view.mode ? <ModeIntro mode={view.mode} language={language} /> : null}
+        {view.phase === "writing" ? <Tasks view={view} send={send} /> : null}
+        {view.phase === "voting" ? <p className="text-sm text-white/50">{t(language, "abstain")}</p> : null}
+        {view.spotlight ? <CardBlock card={view.spotlight} view={view} send={send} /> : null}
+        {view.board.map((card) => <CardBlock key={card.id} card={card} view={view} send={send} />)}
+        {view.phase === "results" || view.phase === "leaderboard" || view.phase === "game_over" ? <Scores view={view} send={send} /> : null}
       </div>
-      {view.isHost || view.you?.host ? <div className="mt-8"><DebugBar view={view} send={send} /></div> : null}
+      {view.isHost || view.demo ? <div className="mt-6"><DebugBar view={view} send={send} /></div> : null}
     </PhoneShell>
   );
 }
 
-function LobbyPhone({ code, view, send }: { code: string; view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
-  const [origin, setOrigin] = useState("");
+function Lobby({ view, origin, send }: { view: ClientView; origin: string; send: (action: Record<string, unknown>) => Promise<unknown> }) {
+  const language = view.config.language;
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setOrigin(window.location.origin), []);
-  const host = view.isHost || view.you?.host;
-  const startReason = !view.deck.ready ? view.deck.label : view.players.length < 3 ? "Нужно минимум три игрока" : "";
+  async function run(action: Record<string, unknown>) {
+    setError(null);
+    try {
+      await send(action);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t(language, "roomDown"));
+    }
+  }
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-5xl font-semibold tracking-[0.14em]">{view.code}</p>
-        <p className="mt-2 text-white/65">Общий экран открывается отдельно. Эту страницу оставьте себе: с неё вы пишете и голосуете.</p>
-        <a href={`/tv/${code}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-xl bg-white text-base font-medium text-[#14110e]">
-          Открыть общий экран
-        </a>
-      </div>
-      {origin ? <QrImage value={`${origin}/play/${code}`} className="size-40" /> : null}
-      <ul className="space-y-2">
-        {view.players.map((player) => (
-          <li key={player.id} className="flex items-center gap-2 text-lg">
-            <i className="size-3 rounded-full" style={{ background: player.color }} />
-            {player.name}{player.host ? " · создатель" : ""}{player.bot ? " · бот" : ""}
-          </li>
-        ))}
-      </ul>
-      <Roulette view={view} />
-      {host ? (
-        <div className="space-y-4 rounded-3xl bg-white/5 p-4">
-          <div>
-            <p className="text-sm text-white/55">Сколько мест в колоде</p>
-            <div className="mt-2 flex gap-2">
-              {[3, 4, 5, 6, 7, 8].map((cap) => (
-                <button key={cap} type="button" onClick={() => void send({ type: "cap", cap }).catch((caught: Error) => setError(caught.message))} className={`grid size-10 place-items-center rounded-full ${view.cap === cap ? "bg-[#ff5a36] text-[#1a100c]" : "bg-white/10"}`}>{cap}</button>
+      <p className="text-white/70">{t(language, "tagline")}</p>
+      {view.demo ? <p>{t(language, "demoWatch")}</p> : null}
+      <Roster view={view} />
+      {view.isHost ? (
+        <div className="space-y-4">
+          <Field label={t(language, "language")}>
+            <Choice
+              values={["en", "ru"]}
+              current={view.config.language}
+              label={(value) => (value === "ru" ? "Русский" : "English")}
+              onPick={(value) => void run({ type: "settings", language: value })}
+            />
+          </Field>
+          <Field label={t(language, "intensity")}>
+            <Choice
+              values={["casual", "unhinged", "footprint"] as GameConfig["intensity"][]}
+              current={view.config.intensity}
+              label={(value) => t(language, value)}
+              onPick={(value) => void run({ type: "settings", intensity: value })}
+            />
+          </Field>
+          <Field label={t(language, "rounds")}>
+            <Choice values={[2, 3, 4, 5]} current={view.config.rounds} label={(value) => String(value)} onPick={(value) => void run({ type: "settings", rounds: value })} />
+          </Field>
+          <Field label={t(language, "playlist")}>
+            <ol className="space-y-2">
+              {view.playlist.map((mode, index) => (
+                <li key={`${mode}-${index}`} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-3 py-2">
+                  <span>{t(language, `mode_${mode}`)}</span>
+                  <span className="flex gap-1">
+                    <Tiny onClick={() => void run({ type: "settings", playlist: move(view.playlist, index, -1) })}>↑</Tiny>
+                    <Tiny onClick={() => void run({ type: "settings", playlist: move(view.playlist, index, 1) })}>↓</Tiny>
+                  </span>
+                </li>
               ))}
-            </div>
-          </div>
-          <p className="text-sm text-white/60">{view.deck.label}</p>
-          {view.deck.source === "backup" ? <p className="text-sm text-white/70">Заходы из запасного набора. С ключом модели темы будут новыми в каждой комнате. Фото всё равно ищутся в интернете.</p> : null}
-          {error ? <p className="text-sm text-[#ff8d72]">{error}</p> : null}
-          <Button type="button" disabled={Boolean(startReason)} className="h-12 w-full rounded-xl text-base" onClick={() => void send({ type: "start" }).catch((caught: Error) => setError(caught.message))}>
-            {startReason || "Начать"}
+            </ol>
+          </Field>
+          <label className="block text-sm text-white/60">
+            {t(language, "exclusions")}
+            <Input
+              defaultValue={view.config.exclusions}
+              maxLength={120}
+              onBlur={(event) => void run({ type: "settings", exclusions: event.target.value })}
+              className="mt-1 h-11 bg-white/5 text-white"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={view.config.finaleMultiplier} onChange={(event) => void run({ type: "settings", finaleMultiplier: event.target.checked })} />
+            {t(language, "finale")}
+          </label>
+          <Field label={t(language, "seats")}>
+            <Choice values={[4, 5, 6, 7, 8]} current={view.cap} label={(value) => String(value)} onPick={(value) => void run({ type: "cap", cap: value })} />
+          </Field>
+          {origin ? <QrImage value={`${origin}${view.joinPath}`} alt={view.code} className="size-40" /> : null}
+          <Link className="block underline text-white/70" href={`/tv/${view.code}`}>{t(language, "openScreen")}</Link>
+          <Button
+            type="button"
+            disabled={pending || view.players.length < 4}
+            className="h-12 w-full rounded-xl"
+            onClick={() => {
+              setPending(true);
+              void run({ type: "start" }).finally(() => setPending(false));
+            }}
+          >
+            {pending ? t(language, "starting") : t(language, "start")}
           </Button>
         </div>
       ) : (
-        <p className="text-white/60">{view.deck.ready ? "Создатель может начинать." : view.deck.label}</p>
+        <p className="text-white/60">{t(language, "waiting")}</p>
       )}
-    </div>
-  );
-}
-
-function WriteForm({ task, send }: { task: Extract<PlayerTask, { phase: "write" }>; send: (action: Record<string, unknown>) => Promise<unknown> }) {
-  const copy = writeCopy(task.kind, task.topic);
-  const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  async function submit(photo: number | null, value = text) {
-    setPending(true);
-    setError(null);
-    try {
-      await send({ type: "write", text: value, photo });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не отправилось");
-      setPending(false);
-    }
-  }
-  if (task.kind === "instagram") {
-    return (
-      <div>
-        <h2 className="text-2xl font-semibold">{copy.title}</h2>
-        <p className="mt-2 text-lg text-white/75">{copy.hint}</p>
-        {task.photos.length === 0 ? (
-          <Button type="button" className="mt-6 h-12 w-full rounded-xl" disabled={pending} onClick={() => void submit(null)}>Кадр не нашёлся, идём дальше</Button>
-        ) : (
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {task.photos.map((photo, index) => (
-              <button key={photo.url} type="button" disabled={pending} onClick={() => void submit(index)} className="overflow-hidden rounded-2xl">
-                {/* Remote photo URLs come from search and are not known at build time. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photo.thumb || photo.url} alt={copy.hint} className="aspect-[4/5] w-full object-cover" referrerPolicy="no-referrer" />
-              </button>
-            ))}
-          </div>
-        )}
-        {error ? <p className="mt-3 text-sm text-[#ff8d72]">{error}</p> : null}
-      </div>
-    );
-  }
-  if (task.kind === "thread") {
-    return (
-      <form onSubmit={(event) => { event.preventDefault(); void submit(null); }}>
-        <EchoShell>
-          <div className="flex gap-3">
-            <div className="flex w-10 flex-col items-center">
-              <EchoAvatar name="лента" />
-              <span className="mt-1 min-h-4 w-0.5 flex-1 rounded-full bg-[#f6f1ea]/20" />
-            </div>
-            <div className="min-w-0 flex-1 pb-3">
-              <EchoName name="лента" />
-              <p className="mt-1 text-[17px] leading-snug">{copy.hint}</p>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <div className="flex w-10 justify-center">
-              <EchoAvatar name="вы" />
-            </div>
-            <label className="min-w-0 flex-1">
-              <span className="text-[13px] text-[#f6f1ea]/45">Ваш ответ · в ответ {handleOf("лента")}</span>
-              <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-1 h-11 border-0 bg-white/10 px-3 text-base text-[#f6f1ea] placeholder:text-[#f6f1ea]/35 md:text-base" />
-            </label>
-          </div>
-        </EchoShell>
-        <div className="mt-2 text-sm text-white/45">{text.length}/{task.max}</div>
-        {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
-        <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Ответить</Button>
-      </form>
-    );
-  }
-  return (
-    <form onSubmit={(event) => { event.preventDefault(); void submit(null); }}>
-      <h2 className="text-2xl font-semibold">{copy.title}</h2>
-      <p className="mt-2 text-lg text-white/75">{copy.hint}</p>
-      <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-4 h-12 bg-white/5 px-3 text-base text-white md:text-base" />
-      <div className="mt-2 flex justify-between text-sm text-white/45">
-        <span>{text.length}/{task.max}</span>
-      </div>
-      {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
-      <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Отправить</Button>
-    </form>
-  );
-}
-
-function TwistForm({ task, send }: { task: Extract<PlayerTask, { phase: "twist" }>; send: (action: Record<string, unknown>) => Promise<unknown> }) {
-  const copy = twistCopy(task.kind);
-  const [text, setText] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    setError(null);
-    try {
-      await send({ type: "twist", text });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не отправилось");
-      setPending(false);
-    }
-  }
-  if (task.kind === "thread") {
-    return (
-      <form onSubmit={(event) => void submit(event)}>
-        <EchoShell>
-          <div className="flex gap-3">
-            <div className="flex w-10 flex-col items-center">
-              <EchoAvatar name="вы" />
-              <span className="mt-1 min-h-4 w-0.5 flex-1 rounded-full bg-[#f6f1ea]/20" />
-            </div>
-            <label className="min-w-0 flex-1 pb-3">
-              <span className="text-[13px] text-[#f6f1ea]/45">Ваш пост</span>
-              <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-1 h-11 border-0 bg-white/10 px-3 text-base text-[#f6f1ea] placeholder:text-[#f6f1ea]/35 md:text-base" />
-            </label>
-          </div>
-          <div className="flex gap-3">
-            <div className="flex w-10 justify-center">
-              <EchoAvatar name={task.sourceName || "?"} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <EchoName name={task.sourceName || "Игрок"} />
-              <p className="mt-1 text-[17px] leading-snug">{task.sourceText}</p>
-            </div>
-          </div>
-        </EchoShell>
-        <div className="mt-2 text-sm text-white/45">{text.length}/{task.max}</div>
-        {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
-        <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Поставить</Button>
-      </form>
-    );
-  }
-  return (
-    <form onSubmit={(event) => void submit(event)}>
-      <p className="text-sm text-white/50">Фраза {task.sourceName}</p>
-      {task.photo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={task.photo.url} alt="" className="mt-3 aspect-[4/5] w-full rounded-2xl object-cover" referrerPolicy="no-referrer" />
-      ) : <p className="mt-2 text-2xl font-semibold">«{task.sourceText}»</p>}
-      <h2 className="mt-5 text-2xl font-semibold">{copy.title}</h2>
-      <Input value={text} maxLength={task.max} onChange={(event) => setText(event.target.value)} placeholder={copy.placeholder} className="mt-4 h-12 bg-white/5 px-3 text-base text-white md:text-base" />
-      <div className="mt-2 text-sm text-white/45">{text.length}/{task.max}</div>
-      {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
-      <Button type="submit" disabled={pending || text.trim().length === 0} className="mt-3 h-12 w-full rounded-xl text-base">Вывернуть</Button>
-    </form>
-  );
-}
-
-function VoteForm({
-  task,
-  send,
-}: {
-  task: Extract<PlayerTask, { phase: "vote" }>;
-  send: (action: Record<string, unknown>) => Promise<unknown>;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="space-y-3">
-      <h2 className="text-2xl font-semibold">{task.options[0]?.kind === "thread" ? "Кому лайк?" : "Что стыднее?"}</h2>
-      <p className="text-white/60">{task.options[0]?.kind === "thread" ? "Свой пост лайкнуть нельзя. Лайк можно сменить, пока идёт таймер." : "Свой подкол выбрать нельзя. Голос можно сменить, пока идёт таймер."}</p>
-      {task.options.map((card) => (
-        <button
-          key={card.seat}
-          type="button"
-          disabled={card.mine}
-          onClick={() => void send({ type: "vote", seat: card.seat }).catch((caught: Error) => setError(caught.message))}
-          className={`block w-full rounded-2xl text-left ${card.selected ? "ring-2 ring-[#ff5a36]" : ""} ${card.mine ? "opacity-50" : ""}`}
-        >
-          <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} poster={card.twisterName} likes={card.votes} topic={card.topic} />
-          {card.mine ? <span className="mt-1 block text-sm text-white/50">{card.kind === "thread" ? "Это твой пост" : "Это твой подкол"}</span> : null}
-        </button>
-      ))}
       {error ? <p className="text-sm text-[#ff8d72]">{error}</p> : null}
     </div>
   );
 }
 
-function Waiting({ view }: { view: ClientView }) {
-  if (view.phase === "scores") {
-    const mine = view.scoreboard.find((row) => row.id === view.you?.id);
-    return (
-      <div>
-        <p className="text-lg text-white/70">Счёт на экране.</p>
-        {mine ? <p className="mt-3 text-3xl font-semibold">{mine.total} {mine.delta ? <span className="text-[#9be7b8]">+{mine.delta}</span> : null}</p> : null}
-        {mine?.reason ? <p className="mt-2 text-white/60">{mine.reason}</p> : <p className="mt-2 text-white/45">В этом раунде очков нет.</p>}
-      </div>
-    );
-  }
-  return <p className="text-lg text-white/70">Ответ ушёл. Смотри на общий экран: {phaseLabel(view.phase, view.kind).toLowerCase()}.</p>;
-}
-
-function Done({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
-  const mine = view.scoreboard.find((row) => row.id === view.you?.id);
-  const won = view.winners.includes(view.you?.name ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const host = view.isHost || view.you?.host;
+function Tasks({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
+  const language = view.config.language;
+  const tasks = view.you?.tasks ?? [];
+  if (tasks.length === 0) return <p className="text-white/70">{t(language, "sent")}</p>;
   return (
-    <div>
-      <h2 className="text-3xl font-semibold">{won ? "Ты выжил" : view.winners.length ? `Выжил ${view.winners.join(", ")}` : "Партия закрыта"}</h2>
-      <p className="mt-3 text-4xl font-semibold tabular-nums">{mine?.total ?? 0}</p>
-      {host ? (
-        <Button type="button" className="mt-6 h-12 w-full rounded-xl text-base" onClick={() => void send({ type: "again" }).catch((caught: Error) => setError(caught.message))}>
-          Ещё катка
-        </Button>
-      ) : (
-        <p className="mt-6 text-white/60">Создатель может крутить следующую катку в этой комнате.</p>
-      )}
-      {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
-      <Link href="/" className="mt-4 inline-block underline">Новая комната</Link>
+    <div className="space-y-4">
+      {view.mode === "ratio" || view.mode === "explain" ? <p className="text-sm text-white/55">{t(language, "bothPrompts")}</p> : null}
+      {view.mode === "dms" && view.writeStep === 1 ? <p className="text-sm text-white/55">{t(language, "contextHidden")}</p> : null}
+      <p className="text-sm text-white/50">{t(language, "ready", { done: view.readyIds.length, total: view.stepTotal })}</p>
+      {tasks.map((task) => <TaskForm key={task.assignmentId} task={task} language={language} send={send} />)}
     </div>
   );
 }
 
-function Roulette({ view }: { view: ClientView }) {
-  const seen = uniqueKinds(view.played);
+function TaskForm({ task, language, send }: { task: PlayerTask; language: ClientView["config"]["language"]; send: (action: Record<string, unknown>) => Promise<unknown> }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      await send({ type: "submit", assignmentId: task.assignmentId, text });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t(language, "roomDown"));
+      setPending(false);
+    }
+  }
   return (
-    <div className="rounded-3xl bg-white/5 p-4">
-      <p className="text-sm text-white/55">Катка {view.match} · рулетка</p>
-      <ol className="mt-2 space-y-1 text-lg">
-        {view.playlist.map((kind, index) => (
-          <li key={`${kind}-${index}`}>
-            {index + 1}. {roundTitle(kind)}
-            {index === view.playlist.length - 1 ? <span className="text-white/50"> · финал ×2</span> : null}
+    <form onSubmit={(event) => void onSubmit(event)} className="space-y-2 rounded-3xl border border-white/10 bg-[#171a21] p-4">
+      <p className="text-xs uppercase tracking-[0.14em] text-white/45">{task.title}</p>
+      {task.aside ? <p className="text-sm text-white/55">{task.aside}</p> : null}
+      <p className="text-lg leading-snug">{task.prompt}</p>
+      <textarea
+        value={text}
+        maxLength={task.max}
+        placeholder={task.placeholder}
+        onChange={(event) => setText(event.target.value)}
+        className="min-h-24 w-full rounded-2xl border border-white/10 bg-black/20 p-3 text-base outline-none"
+      />
+      <div className="flex items-center justify-between text-sm text-white/45">
+        <span>{text.trim().length}/{task.max}</span>
+        <Button type="submit" disabled={pending || text.trim().length === 0} className="rounded-xl">{t(language, "submit")}</Button>
+      </div>
+      {error ? <p className="text-sm text-[#ff8d72]">{error}</p> : null}
+    </form>
+  );
+}
+
+function CardBlock({ card, view, send }: { card: FeedCard; view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
+  const language = view.config.language;
+  const choices = view.you?.choices ?? [];
+  return (
+    <FeedCardView
+      card={card}
+      language={language}
+      footer={
+        <>
+          {view.phase === "voting"
+            ? [card.entryA, card.entryB].filter((id) => id && choices.includes(id)).map((id) => {
+                const line = id === card.entryA ? card.textA : card.textB;
+                const picked = view.you?.votedEntry === id;
+                return (
+                  <Button key={id} type="button" variant={picked ? "default" : "outline"} className="h-auto max-w-full whitespace-normal rounded-2xl px-3 py-2 text-left" onClick={() => void send({ type: "vote", entryId: id })}>
+                    {picked ? t(language, "liked") : t(language, "like")}
+                    {line ? ` · ${line.slice(0, 80)}` : ""}
+                  </Button>
+                );
+              })
+            : null}
+          {view.phase === "favorites" ? (
+            <Button type="button" variant={view.you?.favorite === card.id ? "default" : "outline"} className="rounded-full" onClick={() => void send({ type: "favorite", entryId: card.id })}>
+              {view.you?.favorite === card.id ? t(language, "favorited") : t(language, "favorite")}
+              {card.favoriteVotes ? ` ${card.favoriteVotes}` : ""}
+            </Button>
+          ) : null}
+          {view.isHost && (card.submissionA || card.submissionB) && view.phase !== "writing" && view.phase !== "lobby" ? (
+            <>
+              {card.submissionA ? <HostButton label={hostLabel(view)} onClick={() => void send({ type: "remove", submissionId: card.submissionA })} /> : null}
+              {card.submissionB ? <HostButton label={hostLabel(view)} onClick={() => void send({ type: "remove", submissionId: card.submissionB })} /> : null}
+            </>
+          ) : null}
+        </>
+      }
+    />
+  );
+}
+
+function Scores({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
+  const language = view.config.language;
+  return (
+    <section className="space-y-3">
+      {view.phase === "game_over" ? (
+        <h2 className="text-3xl font-semibold">{view.winners.length > 1 ? t(language, "winners") : t(language, "winner")}: {view.winners.join(", ") || t(language, "noWinner")}</h2>
+      ) : null}
+      {view.phase === "game_over" ? <p className="text-sm uppercase tracking-[0.16em] text-white/40">{t(language, "fiction")}</p> : null}
+      <ol className="space-y-2">
+        {view.scoreboard.map((player) => (
+          <li key={player.id} className="rounded-2xl bg-white/5 px-3 py-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-semibold" style={{ color: player.color }}>{player.name}</span>
+              <span className="tabular-nums">{player.total}{player.delta ? ` (+${player.delta})` : ""}</span>
+            </div>
+            {player.reason ? <p className="text-sm text-white/55">{player.reason}</p> : null}
+            <div className="mt-2"><BadgeList kinds={player.badges} language={language} /></div>
           </li>
         ))}
       </ol>
-      {seen.length ? <p className="mt-3 text-sm text-white/50">Уже было: {seen.map((kind) => roundTitle(kind)).join(", ")}</p> : null}
+      {view.phase === "game_over" && (view.isHost || view.demo) ? (
+        <Button type="button" className="rounded-xl" onClick={() => void send({ type: "again" })}>{t(language, "nextMatch")}</Button>
+      ) : null}
+    </section>
+  );
+}
+
+function Roster({ view }: { view: ClientView }) {
+  return (
+    <ul className="flex flex-wrap gap-2">
+      {view.players.map((player) => (
+        <li key={player.id} className="rounded-full bg-white/10 px-3 py-1 text-sm" style={{ color: player.color }}>
+          {player.name}
+          {player.score ? ` · ${player.score}` : ""}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 text-sm text-white/50">{label}</p>
+      {children}
     </div>
   );
 }
 
-function uniqueKinds(kinds: RoundKind[]): RoundKind[] {
-  const seen = new Set<RoundKind>();
-  const list: RoundKind[] = [];
-  for (const kind of kinds) {
-    if (seen.has(kind)) continue;
-    seen.add(kind);
-    list.push(kind);
-  }
-  return list;
+function Choice<T extends string | number>({ values, current, label, onPick }: { values: readonly T[]; current: T; label: (value: T) => string; onPick: (value: T) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {values.map((value) => (
+        <button key={String(value)} type="button" onClick={() => onPick(value)} className={`rounded-full px-3 py-2 text-sm ${value === current ? "bg-[#ff5a36] text-[#1a100c]" : "bg-white/10"}`}>
+          {label(value)}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function PhoneShell({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col bg-[#14110e] px-4 py-6 text-[#f6f1e8]">{children}</main>;
+function Tiny({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="rounded-full bg-white/10 px-2 py-1 text-sm">{children}</button>;
 }
 
-function useClock(serverNow?: number) {
-  const [now, setNow] = useState(serverNow ?? Date.now());
-  useEffect(() => {
-    if (!serverNow) return;
-    const offset = serverNow - Date.now();
-    const id = window.setInterval(() => setNow(Date.now() + offset), 200);
-    setNow(Date.now() + offset);
-    return () => window.clearInterval(id);
-  }, [serverNow]);
-  return now;
+function HostButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="rounded-full bg-white/10 px-3 py-2 text-sm text-white/70">{label}</button>;
+}
+
+function hostLabel(view: ClientView): string {
+  const late = view.phase === "results" || view.phase === "leaderboard" || view.phase === "favorites" || view.phase === "game_over";
+  return t(view.config.language, late ? "hide" : "remove");
+}
+
+function move(playlist: Mode[], index: number, direction: number): Mode[] {
+  const next = [...playlist];
+  const target = index + direction;
+  if (target < 0 || target >= next.length) return next;
+  const current = next[index];
+  next[index] = next[target];
+  next[target] = current;
+  return next;
+}
+
+function PhoneShell({ children }: { children: ReactNode }) {
+  return <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-4 py-6">{children}</main>;
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 
-export function QrImage({ value, className }: { value: string; className?: string }) {
+export function QrImage({ value, className, alt = "QR code" }: { value: string; className?: string; alt?: string }) {
   const [src, setSrc] = useState("");
   useEffect(() => {
     let stop = false;
@@ -21,6 +21,6 @@ export function QrImage({ value, className }: { value: string; className?: strin
   if (!src) return <div className={`animate-pulse rounded-2xl bg-white/10 ${className ?? "size-48"}`} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt="QR-код, чтобы войти в комнату" className={`rounded-2xl bg-white p-2 ${className ?? "size-48"}`} />
+    <img src={src} alt={alt} className={`rounded-2xl bg-white p-2 ${className ?? "size-48"}`} />
   );
 }
