@@ -88,6 +88,7 @@ export function HomeApp() {
             <Button type="button" className="h-12 flex-1 rounded-xl text-base" onClick={() => openWithCode("tv")}>Экран</Button>
           </div>
           <p className="text-sm text-white/55">«Играть» открывает телефон. «Экран» — общую картинку, которую все смотрят.</p>
+          <p className="text-sm"><a href="/bench" className="text-white/45 underline">Стенд раунда</a></p>
         </form>
         {error ? <p className="mt-4 text-[#ff8d72]">{error}</p> : null}
       </section>
