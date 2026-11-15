@@ -135,8 +135,10 @@ function LobbyPhone({ code, view, send }: { code: string; view: ClientView; send
     <div className="space-y-5">
       <div>
         <p className="text-5xl font-semibold tracking-[0.14em]">{view.code}</p>
-        <p className="mt-2 text-white/65">Этот код вводят на телевизоре: открыть сайт и нажать «Экран».</p>
-        <Link href={`/tv/${code}`} className="mt-2 inline-block text-sm underline">Открыть экран здесь</Link>
+        <p className="mt-2 text-white/65">Общий экран открывается отдельно. Эту страницу оставьте себе: с неё вы пишете и голосуете.</p>
+        <a href={`/tv/${code}`} target="_blank" rel="noreferrer" className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-xl bg-white text-base font-medium text-[#14110e]">
+          Открыть общий экран
+        </a>
       </div>
       {origin ? <QrImage value={`${origin}/play/${code}`} className="size-40" /> : null}
       <ul className="space-y-2">

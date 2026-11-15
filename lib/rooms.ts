@@ -23,6 +23,7 @@ import {
   submitWrite,
   tick,
 } from "./game/engine";
+import { normalizeRoomCode } from "./game/code";
 import { buildView } from "./game/view";
 import type { ClientView, LineupId, RoomState } from "./game/types";
 
@@ -206,7 +207,7 @@ export async function act(code: string, token: string | null, action: Action): P
 }
 
 export function normalizeCode(code: string): string {
-  return code.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+  return normalizeRoomCode(code);
 }
 
 function clampCap(cap: number): number {

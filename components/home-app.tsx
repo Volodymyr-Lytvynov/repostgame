@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { normalizeRoomCode } from "@/lib/game/code";
 import { SiteCard } from "./site-card";
 import { writeSession } from "./use-room";
 
@@ -13,6 +14,16 @@ export function HomeApp() {
   const [code, setCode] = useState("");
   const [pending, setPending] = useState<"room" | "demo" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function openWithCode(where: "play" | "tv") {
+    const next = normalizeRoomCode(code);
+    if (next.length !== 4) {
+      setError("Введите код из 4 знаков. Буквы можно набирать и русскими: М станет M.");
+      return;
+    }
+    setError(null);
+    router.push(`/${where}/${next}`);
+  }
 
   async function create(demo: boolean) {
     setPending(demo ? "demo" : "room");
@@ -56,22 +67,28 @@ export function HomeApp() {
           </Button>
         </div>
         <form
-          className="mt-8 flex max-w-md gap-2"
+          className="mt-8 max-w-md space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
-            const next = code.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
-            if (next.length === 4) router.push(`/play/${next}`);
+            openWithCode("play");
           }}
         >
-          <Input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="Код комнаты" maxLength={4} className="h-12 bg-white/5 px-3 text-base uppercase tracking-[0.2em] text-white md:text-base" />
-          <Button type="submit" variant="secondary" className="h-12 rounded-xl px-4 text-base">Войти</Button>
+          <Input
+            value={code}
+            onChange={(event) => {
+              setCode(normalizeRoomCode(event.target.value));
+              setError(null);
+            }}
+            placeholder="Код комнаты"
+            maxLength={4}
+            className="h-12 bg-white/5 px-3 text-base uppercase tracking-[0.2em] text-white md:text-base"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" variant="secondary" className="h-12 flex-1 rounded-xl text-base">Играть</Button>
+            <Button type="button" className="h-12 flex-1 rounded-xl text-base" onClick={() => openWithCode("tv")}>Экран</Button>
+          </div>
+          <p className="text-sm text-white/55">«Играть» открывает телефон. «Экран» — общую картинку, которую все смотрят.</p>
         </form>
-        <p className="mt-3 text-sm text-white/45">
-          <button type="button" className="underline" onClick={() => {
-            const next = code.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
-            if (next.length === 4) router.push(`/tv/${next}`);
-          }}>Открыть экран по коду</button>
-        </p>
         {error ? <p className="mt-4 text-[#ff8d72]">{error}</p> : null}
       </section>
       <section className="relative hidden min-h-[640px] lg:block" aria-hidden>
