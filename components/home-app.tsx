@@ -93,10 +93,10 @@ export function HomeApp() {
       </section>
       <section className="relative hidden min-h-[640px] lg:block" aria-hidden>
         <div className="absolute left-0 top-8 w-[320px] -rotate-6">
-          <SiteCard kind="messenger" skins={{ messenger: "whatsapp", job: "workua", market: "olx", thread: "threads" }} mode="show" write="Я уже выехал" twist="Маме" author="Оля" />
+          <SiteCard kind="messenger" mode="show" write="Я уже выехал" twist="Маме" author="Оля" />
         </div>
         <div className="absolute right-0 top-36 w-[300px] rotate-3">
-          <SiteCard kind="instagram" skins={{ messenger: "telegram", job: "linkedin", market: "amazon", thread: "x" }} mode="show" twist="семейный ужин, всё в порядке" author="Макс" topic="семейный чат" />
+          <SiteCard kind="instagram" mode="show" twist="семейный ужин, всё в порядке" author="Макс" topic="семейный чат" />
         </div>
       </section>
     </main>

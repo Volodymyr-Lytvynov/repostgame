@@ -5,11 +5,10 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { cap?: number; demo?: boolean; lineup?: string };
+    const body = (await request.json().catch(() => ({}))) as { cap?: number; demo?: boolean };
     const created = await createRoom({
       cap: Number(body.cap ?? 5),
       demo: Boolean(body.demo),
-      lineup: body.lineup === "browsing" ? "browsing" : "classic",
     });
     return Response.json(created);
   } catch (error) {

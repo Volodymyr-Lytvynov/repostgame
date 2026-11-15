@@ -1,4 +1,4 @@
-import { limits, skinsFromSeed, twistCopy } from "./content";
+import { limits, twistCopy } from "./content";
 import {
   currentKind,
   deckProgress,
@@ -16,7 +16,6 @@ import type { ClientView, PlayerTask, RoomState, ShownCard } from "./types";
 export function buildView(state: RoomState, version: number, token: string | null, now: number): ClientView {
   const player = token ? state.players.find((item) => item.token === token) ?? null : null;
   const isHost = Boolean(player?.host || (token && token === state.hostToken));
-  const skins = skinsFromSeed(state.seed);
   const playing = state.status !== "lobby";
   const kind = playing ? currentKind(state) : null;
   const order = playing ? revealOrder(state) : [];
@@ -33,8 +32,8 @@ export function buildView(state: RoomState, version: number, token: string | nul
     code: state.code,
     demo: state.demo,
     cap: state.cap,
-    lineup: state.lineup,
-    skins,
+    match: state.match,
+    played: state.played,
     status: state.status,
     phase: state.phase,
     round: state.round,

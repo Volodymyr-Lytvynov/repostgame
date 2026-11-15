@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { LINEUP_COPY, roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
+import { roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
 import { phaseLabel } from "@/lib/game/view";
-import type { ClientView, LineupId, PlayerTask } from "@/lib/game/types";
+import type { ClientView, PlayerTask, RoundKind } from "@/lib/game/types";
 import { DebugBar } from "./debug-bar";
 import { SiteCard } from "./site-card";
 import { QrImage } from "./qr-image";
@@ -104,7 +104,7 @@ function Controller({
     <PhoneShell>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm text-white/50">{view.phase === "lobby" ? `Комната ${code}` : `${roundTitle(view.kind ?? "thread", view.skins)} · ${view.round + 1}/${view.roundCount}`}</p>
+          <p className="text-sm text-white/50">{view.phase === "lobby" ? `Комната ${code}` : `${roundTitle(view.kind ?? "thread")} · ${view.round + 1}/${view.roundCount}`}</p>
           <h1 className="text-2xl font-semibold">{view.phase === "lobby" ? "Ждём игроков" : phaseLabel(view.phase)}</h1>
           {finale && view.phase !== "done" ? <p className="text-sm text-[#ffb020]">Финал, очки ×2</p> : null}
         </div>
@@ -116,9 +116,9 @@ function Controller({
         {view.phase === "lobby" ? <LobbyPhone code={code} view={view} send={send} /> : null}
         {view.you?.task?.phase === "write" ? <WriteForm task={view.you.task} send={send} /> : null}
         {view.you?.task?.phase === "twist" ? <TwistForm task={view.you.task} send={send} /> : null}
-        {view.you?.task?.phase === "vote" ? <VoteForm task={view.you.task} skins={view.skins} send={send} /> : null}
+        {view.you?.task?.phase === "vote" ? <VoteForm task={view.you.task} send={send} /> : null}
         {view.phase !== "lobby" && !view.you?.task ? <Waiting view={view} /> : null}
-        {view.phase === "done" ? <Done view={view} /> : null}
+        {view.phase === "done" ? <Done view={view} send={send} /> : null}
       </div>
       {view.isHost || view.you?.host ? <div className="mt-8"><DebugBar view={view} send={send} /></div> : null}
     </PhoneShell>
@@ -149,6 +149,7 @@ function LobbyPhone({ code, view, send }: { code: string; view: ClientView; send
           </li>
         ))}
       </ul>
+      <Roulette view={view} />
       {host ? (
         <div className="space-y-4 rounded-3xl bg-white/5 p-4">
           <div>
@@ -158,14 +159,6 @@ function LobbyPhone({ code, view, send }: { code: string; view: ClientView; send
                 <button key={cap} type="button" onClick={() => void send({ type: "cap", cap }).catch((caught: Error) => setError(caught.message))} className={`grid size-10 place-items-center rounded-full ${view.cap === cap ? "bg-[#ff5a36] text-[#1a100c]" : "bg-white/10"}`}>{cap}</button>
               ))}
             </div>
-          </div>
-          <div className="grid gap-2">
-            {(Object.keys(LINEUP_COPY) as LineupId[]).map((id) => (
-              <button key={id} type="button" onClick={() => void send({ type: "lineup", lineup: id })} className={`rounded-2xl px-3 py-3 text-left ${view.lineup === id ? "bg-white text-[#14110e]" : "bg-white/10"}`}>
-                <b>{LINEUP_COPY[id].title}</b>
-                <span className="mt-1 block text-sm opacity-70">{LINEUP_COPY[id].detail}</span>
-              </button>
-            ))}
           </div>
           <p className="text-sm text-white/60">{view.deck.label}</p>
           {view.deck.source === "backup" ? <p className="text-sm text-white/70">Заходы из запасного набора. С ключом модели темы будут новыми в каждой комнате. Фото всё равно ищутся в интернете.</p> : null}
@@ -267,11 +260,9 @@ function TwistForm({ task, send }: { task: Extract<PlayerTask, { phase: "twist" 
 
 function VoteForm({
   task,
-  skins,
   send,
 }: {
   task: Extract<PlayerTask, { phase: "vote" }>;
-  skins: ClientView["skins"];
   send: (action: Record<string, unknown>) => Promise<unknown>;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -287,7 +278,7 @@ function VoteForm({
           onClick={() => void send({ type: "vote", seat: card.seat }).catch((caught: Error) => setError(caught.message))}
           className={`block w-full rounded-2xl text-left ${card.selected ? "ring-2 ring-[#ff5a36]" : ""} ${card.mine ? "opacity-50" : ""}`}
         >
-          <SiteCard kind={card.kind} skins={skins} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
+          <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
           {card.mine ? <span className="mt-1 block text-sm text-white/50">Это твой подкол</span> : null}
         </button>
       ))}
@@ -310,16 +301,55 @@ function Waiting({ view }: { view: ClientView }) {
   return <p className="text-lg text-white/70">Ответ ушёл. Смотри на общий экран: {phaseLabel(view.phase).toLowerCase()}.</p>;
 }
 
-function Done({ view }: { view: ClientView }) {
+function Done({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
   const mine = view.scoreboard.find((row) => row.id === view.you?.id);
   const won = view.winners.includes(view.you?.name ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const host = view.isHost || view.you?.host;
   return (
     <div>
       <h2 className="text-3xl font-semibold">{won ? "Ты выжил" : view.winners.length ? `Выжил ${view.winners.join(", ")}` : "Партия закрыта"}</h2>
       <p className="mt-3 text-4xl font-semibold tabular-nums">{mine?.total ?? 0}</p>
-      <Link href="/" className="mt-6 inline-block underline">Ещё одна комната</Link>
+      {host ? (
+        <Button type="button" className="mt-6 h-12 w-full rounded-xl text-base" onClick={() => void send({ type: "again" }).catch((caught: Error) => setError(caught.message))}>
+          Ещё катка
+        </Button>
+      ) : (
+        <p className="mt-6 text-white/60">Создатель может крутить следующую катку в этой комнате.</p>
+      )}
+      {error ? <p className="mt-2 text-sm text-[#ff8d72]">{error}</p> : null}
+      <Link href="/" className="mt-4 inline-block underline">Новая комната</Link>
     </div>
   );
+}
+
+function Roulette({ view }: { view: ClientView }) {
+  const seen = uniqueKinds(view.played);
+  return (
+    <div className="rounded-3xl bg-white/5 p-4">
+      <p className="text-sm text-white/55">Катка {view.match} · рулетка</p>
+      <ol className="mt-2 space-y-1 text-lg">
+        {view.playlist.map((kind, index) => (
+          <li key={`${kind}-${index}`}>
+            {index + 1}. {roundTitle(kind)}
+            {index === view.playlist.length - 1 ? <span className="text-white/50"> · финал ×2</span> : null}
+          </li>
+        ))}
+      </ol>
+      {seen.length ? <p className="mt-3 text-sm text-white/50">Уже было: {seen.map((kind) => roundTitle(kind)).join(", ")}</p> : null}
+    </div>
+  );
+}
+
+function uniqueKinds(kinds: RoundKind[]): RoundKind[] {
+  const seen = new Set<RoundKind>();
+  const list: RoundKind[] = [];
+  for (const kind of kinds) {
+    if (seen.has(kind)) continue;
+    seen.add(kind);
+    list.push(kind);
+  }
+  return list;
 }
 
 function PhoneShell({ children }: { children: React.ReactNode }) {

@@ -24,7 +24,7 @@ export function ScreenApp({ code }: { code: string }) {
   }
   if (!view) return <Shell><p className="text-2xl">Открываем комнату…</p></Shell>;
 
-  const title = view.kind ? roundTitle(view.kind, view.skins) : "Кривой репост";
+  const title = view.kind ? roundTitle(view.kind) : "Кривой репост";
   const finale = view.kind === "instagram" && view.round === view.roundCount - 1;
   const left = secondsLeft(view.deadline, now);
 
@@ -47,13 +47,12 @@ export function ScreenApp({ code }: { code: string }) {
       <section className="grid flex-1 place-items-center py-4">
         {view.phase === "lobby" ? <Lobby view={view} /> : null}
         {view.phase === "write" || view.phase === "twist" ? (
-          <SiteCard kind={view.kind ?? "thread"} skins={view.skins} mode="wait" topic={view.kind === "instagram" ? "Кадр выбирают на телефонах" : undefined} />
+          <SiteCard kind={view.kind ?? "thread"} mode="wait" topic={view.kind === "instagram" ? "Кадр выбирают на телефонах" : undefined} />
         ) : null}
         {view.phase === "reveal" && view.spotlight ? (
           <div className="w-full">
             <SiteCard
               kind={view.spotlight.kind}
-              skins={view.skins}
               mode="show"
               write={view.spotlight.write}
               twist={view.spotlight.twist}
@@ -65,7 +64,7 @@ export function ScreenApp({ code }: { code: string }) {
           </div>
         ) : null}
         {view.phase === "vote" ? <Ballot view={view} /> : null}
-        {view.phase === "scores" || view.phase === "done" ? <Scores view={view} /> : null}
+        {view.phase === "scores" || view.phase === "done" ? <Scores view={view} send={send} /> : null}
       </section>
 
       <footer className="space-y-3">
@@ -89,6 +88,8 @@ function Lobby({ view }: { view: ClientView }) {
         <p className="mt-2 max-w-md text-white/70">Отсканируйте код телефоном или откройте сайт и введите эти четыре знака.</p>
         <p className="mt-4 text-lg">{view.deck.label}</p>
         <p className="text-white/50">{view.players.length} из {view.cap} уже внутри</p>
+        <p className="mt-4 text-sm uppercase tracking-[0.16em] text-white/45">Катка {view.match}</p>
+        <p className="mt-1 text-xl">{view.playlist.map((kind, index) => `${index + 1}. ${roundTitle(kind)}`).join("  ·  ")}</p>
       </div>
     </div>
   );
@@ -103,7 +104,7 @@ function Ballot({ view }: { view: ClientView }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {view.ballot.map((card) => (
           <div key={card.seat} className="relative">
-            <SiteCard kind={card.kind} skins={view.skins} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
+            <SiteCard kind={card.kind} mode="show" compact write={card.write} twist={card.twist} photo={card.photo} author={card.authorName} topic={card.topic} />
             <span className="absolute right-2 top-2 rounded-full bg-black/80 px-2 py-1 text-sm text-white">{card.votes}</span>
           </div>
         ))}
@@ -112,12 +113,21 @@ function Ballot({ view }: { view: ClientView }) {
   );
 }
 
-function Scores({ view }: { view: ClientView }) {
+function Scores({ view, send }: { view: ClientView; send: (action: Record<string, unknown>) => Promise<unknown> }) {
   const lead = view.winners;
+  const [error, setError] = useState<string | null>(null);
   return (
     <div className="w-full max-w-xl">
       {view.phase === "done" ? (
-        <h2 className="mb-6 text-center text-5xl font-semibold">{lead.length === 0 ? "Никто не набрал очков" : lead.length > 1 ? `Ничья: ${lead.join(", ")}` : `Выжил ${lead[0]}`}</h2>
+        <div className="mb-6 text-center">
+          <h2 className="text-5xl font-semibold">{lead.length === 0 ? "Никто не набрал очков" : lead.length > 1 ? `Ничья: ${lead.join(", ")}` : `Выжил ${lead[0]}`}</h2>
+          {view.isHost || view.demo ? (
+            <button type="button" className="mt-4 rounded-full bg-[#ff5a36] px-5 py-3 text-lg font-medium text-[#1a100c]" onClick={() => void send({ type: "again" }).catch((caught: Error) => setError(caught.message))}>
+              Ещё катка
+            </button>
+          ) : null}
+          {error ? <p className="mt-2 text-[#ff8d72]">{error}</p> : null}
+        </div>
       ) : null}
       <ul className="space-y-3">
         {view.scoreboard.map((row) => (

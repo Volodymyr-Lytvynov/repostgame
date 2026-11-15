@@ -18,9 +18,9 @@ import {
   givePhotos,
   isDeckReady,
   missingTopics,
+  nextMatch,
   nextPhotoSlot,
   setCap,
-  setLineup,
   startGame,
   submitTwist,
   submitVote,
@@ -29,7 +29,7 @@ import {
 } from "./game/engine";
 import { normalizeRoomCode } from "./game/code";
 import { buildView } from "./game/view";
-import type { ClientView, LineupId, RoomState } from "./game/types";
+import type { ClientView, RoomState } from "./game/types";
 
 type Row = { state: RoomState | string; version: number };
 
@@ -38,7 +38,13 @@ const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export class RoomNotFound extends Error {}
 
 function parseState(value: RoomState | string): RoomState {
-  return typeof value === "string" ? (JSON.parse(value) as RoomState) : value;
+  const state = typeof value === "string" ? (JSON.parse(value) as RoomState) : value;
+  return {
+    ...state,
+    match: state.match || 1,
+    played: state.played ?? [],
+    usedTopics: state.usedTopics ?? [],
+  };
 }
 
 async function load(code: string): Promise<{ state: RoomState; version: number }> {
@@ -69,7 +75,7 @@ function makeCode(): string {
   return Array.from({ length: 4 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
 }
 
-export async function createRoom(input: { cap: number; demo: boolean; lineup: LineupId }): Promise<{ code: string; hostToken: string }> {
+export async function createRoom(input: { cap: number; demo: boolean }): Promise<{ code: string; hostToken: string }> {
   const cap = input.demo ? 3 : clampCap(input.cap);
   const recent = await sql<{ count: string }>(
     "select count(*)::text as count from rooms where created_at > now() - interval '1 hour'",
@@ -83,8 +89,6 @@ export async function createRoom(input: { cap: number; demo: boolean; lineup: Li
       hostToken,
       cap,
       demo: input.demo,
-      lineup: input.lineup,
-      seed: randomInt(1, 10_000),
       now: Date.now(),
     });
     const rows = await sql<{ code: string }>(
@@ -117,7 +121,7 @@ async function ensureTopics(code: string): Promise<void> {
   }
   await mutate(code, (state) => (missingTopics(state).length ? { ...state, deckLock: Date.now() } : state));
   try {
-    const avoid = row.state.cards.map((card) => card.topic).filter(Boolean);
+    const avoid = [...row.state.usedTopics, ...row.state.cards.map((card) => card.topic).filter(Boolean)];
     const fills = await generateTopics(missing, avoid);
     await mutate(code, (state) => {
       const shelled = ensureShells(state);
@@ -152,7 +156,7 @@ export async function viewRoom(code: string, token: string | null): Promise<Clie
 type Action =
   | { type: "join"; name?: string }
   | { type: "cap"; cap?: number }
-  | { type: "lineup"; lineup?: string }
+  | { type: "again" }
   | { type: "start" }
   | { type: "write"; text?: string; photo?: number | null }
   | { type: "twist"; text?: string }
@@ -190,9 +194,9 @@ export async function act(code: string, token: string | null, action: Action): P
       if (!host) throw new GameError("Число игроков меняет только создатель");
       return setCap(current, clampCap(action.cap ?? current.cap));
     }
-    if (action.type === "lineup") {
-      if (!host) throw new GameError("Набор раундов меняет только создатель");
-      return setLineup(current, action.lineup === "browsing" ? "browsing" : "classic");
+    if (action.type === "again") {
+      if (!host && !current.demo) throw new GameError("Следующую катку крутит создатель");
+      return nextMatch(current);
     }
     if (action.type === "start") {
       if (!host) throw new GameError("Начинает создатель комнаты");

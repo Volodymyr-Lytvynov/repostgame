@@ -1,16 +1,5 @@
-import { botTwist, botWrite, fallbackTopic, limits, LINEUPS, PALETTE, plural } from "./content";
-import type {
-  Card,
-  LineupId,
-  Phase,
-  Photo,
-  RoomState,
-  RoundKind,
-  ScoreEvent,
-  ShownCard,
-  Submission,
-  Twist,
-} from "./types";
+import { botTwist, botWrite, fallbackTopic, limits, PALETTE, plural } from "./content";
+import { ROUND_KINDS, type Card, type Phase, type Photo, type RoomState, type RoundKind, type ScoreEvent, type ShownCard, type Submission, type Twist } from "./types";
 
 export class GameError extends Error {}
 
@@ -27,28 +16,64 @@ export function duration(phase: Phase, demo: boolean): number {
   return table[phase];
 }
 
+export const MATCH_SIZE = 4;
+
+export function drawPlaylist(played: readonly RoundKind[], random: () => number = Math.random): RoundKind[] {
+  const seen = new Set(played);
+  const picked = shuffle(ROUND_KINDS.filter((kind) => !seen.has(kind)), random).slice(0, MATCH_SIZE);
+  if (picked.length === MATCH_SIZE) return picked;
+  const recent = new Set(played.slice(-MATCH_SIZE));
+  const older = shuffle(
+    ROUND_KINDS.filter((kind) => !picked.includes(kind) && !recent.has(kind)),
+    random,
+  );
+  for (const kind of older) {
+    if (picked.length === MATCH_SIZE) break;
+    picked.push(kind);
+  }
+  if (picked.length === MATCH_SIZE) return picked;
+  const rest = shuffle(
+    ROUND_KINDS.filter((kind) => !picked.includes(kind)),
+    random,
+  );
+  return [...picked, ...rest].slice(0, MATCH_SIZE);
+}
+
+function shuffle<T>(items: readonly T[], random: () => number): T[] {
+  const copy = [...items];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    const current = copy[index];
+    copy[index] = copy[swap];
+    copy[swap] = current;
+  }
+  return copy;
+}
+
 export function freshRoom(input: {
   code: string;
   hostToken: string;
   cap: number;
   demo: boolean;
-  lineup: LineupId;
-  seed: number;
   now: number;
+  playlist?: RoundKind[];
+  random?: () => number;
 }): RoomState {
+  const played: RoundKind[] = [];
   const state: RoomState = {
     code: input.code,
     demo: input.demo,
     cap: input.cap,
-    lineup: input.lineup,
-    seed: input.seed,
     hostToken: input.hostToken,
+    match: 1,
+    played,
+    usedTopics: [],
+    playlist: input.playlist ?? drawPlaylist(played, input.random ?? Math.random),
     createdAt: input.now,
     players: [],
     status: "lobby",
     phase: "lobby",
     round: 0,
-    playlist: LINEUPS[input.lineup],
     cards: [],
     submissions: [],
     twists: [],
@@ -182,7 +207,7 @@ export function applyTopics(
 
 export function applyFallback(state: RoomState): RoomState {
   const fills = missingTopics(state).map((slot) => {
-    const topic = fallbackTopic(slot.kind, state.code, slot.seat);
+    const topic = fallbackTopic(slot.kind, state.code, slot.seat, state.played.length);
     return { kind: slot.kind, seat: slot.seat, topic: topic.topic, query: topic.query };
   });
   return applyTopics(state, fills, "backup");
@@ -206,9 +231,39 @@ export function setCap(state: RoomState, cap: number): RoomState {
   return ensureShells({ ...state, cap });
 }
 
-export function setLineup(state: RoomState, lineup: LineupId): RoomState {
-  if (state.phase !== "lobby") throw new GameError("Набор раундов меняется только в лобби");
-  return ensureShells({ ...state, lineup, playlist: LINEUPS[lineup] });
+export function nextMatch(state: RoomState, random: () => number = Math.random): RoomState {
+  if (state.phase !== "done") throw new GameError("Следующая катка открывается после финала");
+  const played = [...state.played, ...state.playlist];
+  const playlist = drawPlaylist(played, random);
+  const usedTopics = [...new Set([...state.usedTopics, ...state.cards.map((card) => card.topic.trim()).filter(Boolean)])];
+  const cards = state.cards.map((card) =>
+    playlist.includes(card.kind)
+      ? { ...card, topic: "", query: "", photos: card.kind === "instagram" ? null : [], photoError: false }
+      : card,
+  );
+  return ensureShells({
+    ...state,
+    match: state.match + 1,
+    played,
+    usedTopics,
+    playlist,
+    cards,
+    status: "lobby",
+    phase: "lobby",
+    round: 0,
+    submissions: [],
+    twists: [],
+    votes: [],
+    scores: {},
+    log: [],
+    reveal: 0,
+    deadline: null,
+    seats: [],
+    deckLock: null,
+    promptSource: null,
+    paused: false,
+    pauseRemaining: null,
+  });
 }
 
 export function addPlayer(state: RoomState, player: Omit<RoomState["players"][number], "color" | "joinedAt"> & { now: number }): RoomState {

@@ -12,21 +12,7 @@ export const ROUND_KINDS = [
 
 export type RoundKind = (typeof ROUND_KINDS)[number];
 
-export type LineupId = "classic" | "browsing";
-
 export type Phase = "lobby" | "write" | "twist" | "reveal" | "vote" | "scores" | "done";
-
-export type MessengerSkin = "telegram" | "whatsapp" | "viber";
-export type JobSkin = "workua" | "linkedin" | "indeed";
-export type MarketSkin = "olx" | "amazon";
-export type ThreadSkin = "threads" | "x";
-
-export type Skins = {
-  messenger: MessengerSkin;
-  job: JobSkin;
-  market: MarketSkin;
-  thread: ThreadSkin;
-};
 
 export type Photo = {
   url: string;
@@ -87,9 +73,10 @@ export type RoomState = {
   code: string;
   demo: boolean;
   cap: number;
-  lineup: LineupId;
-  seed: number;
   hostToken: string;
+  match: number;
+  played: RoundKind[];
+  usedTopics: string[];
   createdAt: number;
   players: Player[];
   status: "lobby" | "playing" | "finished";
@@ -154,8 +141,8 @@ export type ClientView = {
   code: string;
   demo: boolean;
   cap: number;
-  lineup: LineupId;
-  skins: Skins;
+  match: number;
+  played: RoundKind[];
   status: RoomState["status"];
   phase: Phase;
   round: number;

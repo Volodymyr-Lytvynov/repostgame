@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { handleOf, roundTitle } from "@/lib/game/content";
-import type { Photo, RoundKind, Skins } from "@/lib/game/types";
+import type { Photo, RoundKind } from "@/lib/game/types";
 
 export type StageProps = {
   kind: RoundKind;
-  skins: Skins;
   mode: "wait" | "show";
   write?: string;
   twist?: string;
@@ -35,54 +34,53 @@ function renderKind(props: StageProps) {
   if (props.kind === "review") return <ReviewCard {...props} />;
   if (props.kind === "video") return <VideoCard {...props} />;
   if (props.kind === "ai") return <AiCard {...props} />;
-  return <InstagramCard {...props} />;
+  return <FeedCard {...props} />;
 }
 
-function Messenger({ skins, mode, write, twist, author, compact }: StageProps) {
-  const skin = skins.messenger;
-  const header = skin === "whatsapp" ? "bg-[#075e54]" : skin === "viber" ? "bg-[#7360f2]" : "bg-[#3390ec]";
-  const wallpaper = skin === "whatsapp" ? "bg-[#efe7de]" : skin === "viber" ? "bg-[#f3f0fa]" : "bg-[#dbe7f2]";
-  const bubble = skin === "viber" ? "bg-[#7360f2] text-white" : "bg-[#d9fdd3] text-[#111]";
-  const title = mode === "show" ? twist || "Чат" : roundTitle("messenger", skins);
+function Brand({ kind }: { kind: RoundKind }) {
+  return <span className="text-[13px] font-semibold tracking-wide text-[#8a8178]">{roundTitle(kind)}</span>;
+}
+
+function Messenger({ mode, write, twist, author, compact }: StageProps) {
+  const title = mode === "show" ? twist || "Чат" : "Новый чат";
   return (
     <div className={`flex flex-col ${compact ? "" : "min-h-[520px]"}`}>
-      <header className={`flex items-center gap-3 px-4 py-3 text-white ${header}`}>
+      <header className="flex items-center gap-3 bg-[#3f342c] px-4 py-3 text-[#f6f1ea]">
         <span className="text-lg">‹</span>
         <Avatar name={author || "?"} light />
         <div className="min-w-0">
           <div className="truncate text-[15px] font-semibold">{title}</div>
-          <div className="text-[11px] text-white/80">{mode === "show" ? "был(а) недавно" : "печатает…"}</div>
+          <div className="text-[11px] text-[#f6f1ea]/70">{mode === "show" ? "Весточка · был(а) недавно" : "Весточка · печатает…"}</div>
         </div>
       </header>
-      <div className={`flex-1 px-3 py-4 ${wallpaper} ${compact ? "min-h-28" : ""}`} style={{ backgroundImage: "radial-gradient(rgba(0,0,0,.08) .7px, transparent .7px)", backgroundSize: "14px 14px" }}>
-        <div className={`ml-auto max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 text-[15px] leading-snug shadow-sm ${bubble}`}>
+      <div className={`flex-1 bg-[#f3eadf] px-3 py-4 ${compact ? "min-h-28" : ""}`}>
+        <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm border border-[#e4d8c8] bg-[#fffaf4] px-3 py-2 text-[15px] leading-snug text-[#1c1916]">
           {mode === "show" ? write : <Dots />}
-          <div className={`mt-1 text-right text-[10px] ${skin === "viber" ? "text-white/70" : "text-black/45"}`}>21:41 ✓✓</div>
+          <div className="mt-1 text-right text-[10px] text-[#1c1916]/45">21:41</div>
         </div>
       </div>
     </div>
   );
 }
 
-function ThreadCard({ skins, mode, write, twist, author, compact }: StageProps) {
-  const dark = skins.thread === "x";
+function ThreadCard({ mode, write, twist, author, compact }: StageProps) {
   const tag = twist ? (twist.startsWith("#") ? twist : `#${twist.replace(/\s+/g, "")}`) : "#…";
   return (
-    <article className={`${dark ? "bg-black text-white" : "bg-white text-[#111]"} ${compact ? "p-3" : "p-5"}`}>
-      <div className="mb-3 flex items-center justify-between text-[13px] font-bold">
-        <span>{dark ? "X" : "threads"}</span>
-        <span className={dark ? "text-white/50" : "text-black/40"}>{dark ? "Для вас" : "Для вас"}</span>
+    <article className={`bg-[#f7f4ef] text-[#1c1916] ${compact ? "p-3" : "p-5"}`}>
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-[18px] font-semibold">Эхо</span>
+        <span className="text-[13px] text-[#1c1916]/45">Рядом</span>
       </div>
       <div className="flex gap-3">
         <Avatar name={author || "?"} />
         <div className="min-w-0 flex-1">
           <div className="flex gap-2 text-[14px]">
             <b>{author || "Игрок"}</b>
-            <span className={dark ? "text-white/50" : "text-black/45"}>{handleOf(author || "user")}</span>
+            <span className="text-[#1c1916]/45">{handleOf(author || "user")}</span>
           </div>
-          <p className={`mt-1 text-[17px] leading-snug ${dark ? "text-white" : ""}`}>{mode === "show" ? write : <Dots />}</p>
-          {mode === "show" ? <p className="mt-2 text-[16px] font-semibold text-[#1d9bf0]">{tag}</p> : null}
-          <div className={`mt-4 flex justify-between text-[13px] ${dark ? "text-white/50" : "text-black/40"}`}>
+          <p className="mt-1 text-[17px] leading-snug">{mode === "show" ? write : <Dots />}</p>
+          {mode === "show" ? <p className="mt-2 text-[16px] font-semibold text-[#9a4632]">{tag}</p> : null}
+          <div className="mt-4 flex justify-between text-[13px] text-[#1c1916]/45">
             <span>↩ 12</span><span>↻ 48</span><span>♥ 320</span><span>↗</span>
           </div>
         </div>
@@ -91,28 +89,20 @@ function ThreadCard({ skins, mode, write, twist, author, compact }: StageProps) 
   );
 }
 
-function JobCard({ skins, mode, write, twist, author }: StageProps) {
-  const skin = skins.job;
+function JobCard({ mode, write, twist, author }: StageProps) {
   return (
-    <article className="bg-white">
-      {skin === "linkedin" ? (
-        <div className="h-16 bg-[#0a66c2]" />
-      ) : skin === "indeed" ? (
-        <div className="bg-[#2164f3] px-4 py-3 text-[22px] font-bold text-white">indeed</div>
-      ) : (
-        <div className="border-b px-4 py-3 text-[22px] font-black text-[#222]">
-          work<span className="text-[#00a046]">.ua</span>
+    <article className="bg-[#f7f4ef]">
+      <div className="border-b border-[#e4d8c8] px-4 py-3">
+        <div className="text-[22px] font-semibold text-[#1c1916]">Смена</div>
+      </div>
+      <div className="px-4 py-4">
+        <h3 className="text-[22px] font-semibold leading-tight text-[#1c1916]">{mode === "show" ? twist || "Должность" : "Новая вакансия"}</h3>
+        <p className="mt-1 text-[13px] text-[#5c564f]">{author || "Соискатель"} · Киев · полная занятость</p>
+        <div className="mt-4 rounded-xl bg-white p-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[#8a8178]">Сопроводительное</div>
+          <p className="mt-1 text-[15px] leading-snug text-[#1c1916]">{mode === "show" ? write : <Dots />}</p>
         </div>
-      )}
-      <div className={`px-4 py-4 ${skin === "linkedin" ? "-mt-6" : ""}`}>
-        {skin === "linkedin" ? <Avatar name={author || "?"} /> : null}
-        <h3 className="mt-2 text-[22px] font-semibold leading-tight text-[#111]">{mode === "show" ? twist || "Должность" : "Новая вакансия"}</h3>
-        <p className="mt-1 text-[13px] text-[#555]">{author || "Соискатель"} · Киев · полная занятость</p>
-        <div className="mt-4 rounded-xl bg-[#f4f6f8] p-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-[#667]">Сопроводительное</div>
-          <p className="mt-1 text-[15px] leading-snug text-[#222]">{mode === "show" ? write : <Dots />}</p>
-        </div>
-        <div className={`mt-4 rounded-full px-4 py-2 text-center text-[14px] font-semibold text-white ${skin === "workua" ? "bg-[#00a046]" : "bg-[#0a66c2]"}`}>
+        <div className="mt-4 rounded-full bg-[#9a4632] px-4 py-2 text-center text-[14px] font-semibold text-[#f6f1ea]">
           Откликнуться
         </div>
       </div>
@@ -120,22 +110,19 @@ function JobCard({ skins, mode, write, twist, author }: StageProps) {
   );
 }
 
-function MarketCard({ skins, mode, write, twist }: StageProps) {
+function MarketCard({ mode, write, twist }: StageProps) {
   const offer = splitOffer(twist || "");
-  const olx = skins.market === "olx";
   return (
-    <article className="bg-white">
-      <header className={`flex items-center justify-between px-4 py-3 ${olx ? "bg-[#002f34] text-white" : "bg-[#131921] text-white"}`}>
-        <b className="text-[22px] tracking-tight">{olx ? "OLX" : "amazon"}</b>
-        <span className={`rounded-full px-3 py-1 text-[12px] font-semibold ${olx ? "bg-[#23e5db] text-[#002f34]" : "bg-[#ff9900] text-black"}`}>
-          {olx ? "Написать" : "В корзину"}
-        </span>
+    <article className="bg-[#f7f4ef]">
+      <header className="flex items-center justify-between bg-[#2c3330] px-4 py-3 text-[#f6f1ea]">
+        <b className="text-[22px] tracking-tight">Лавка</b>
+        <span className="rounded-full bg-[#e7d7a8] px-3 py-1 text-[12px] font-semibold text-[#2c3330]">Забрать</span>
       </header>
       <div className="px-4 py-4">
-        <div className="text-[13px] text-[#666]">{olx ? "Киев · сегодня 18:40" : "★★★★☆  214 оценок"}</div>
+        <div className="text-[13px] text-[#5c564f]">Киев · сегодня 18:40</div>
         <h3 className="mt-1 text-[22px] font-semibold leading-tight">{mode === "show" ? offer.title || "Товар" : "Объявление"}</h3>
         <div className="mt-2 text-[28px] font-bold">{mode === "show" ? offer.price : "—"}</div>
-        <p className="mt-3 text-[15px] leading-snug text-[#333]">{mode === "show" ? write : <Dots />}</p>
+        <p className="mt-3 text-[15px] leading-snug text-[#1c1916]">{mode === "show" ? write : <Dots />}</p>
       </div>
     </article>
   );
@@ -143,22 +130,15 @@ function MarketCard({ skins, mode, write, twist }: StageProps) {
 
 function SearchCard({ mode, write, twist, compact }: StageProps) {
   return (
-    <article className={`bg-white ${compact ? "p-3" : "px-5 py-6"}`}>
-      <div className="text-center text-[32px] font-medium tracking-tight">
-        <span className="text-[#4285f4]">G</span>
-        <span className="text-[#ea4335]">o</span>
-        <span className="text-[#fbbc05]">o</span>
-        <span className="text-[#4285f4]">g</span>
-        <span className="text-[#34a853]">l</span>
-        <span className="text-[#ea4335]">e</span>
-      </div>
-      <div className="mx-auto mt-4 flex items-center rounded-full border px-4 py-2 text-[15px] shadow-sm">
+    <article className={`bg-[#f7f4ef] ${compact ? "p-3" : "px-5 py-6"}`}>
+      <div className="text-center text-[32px] font-semibold tracking-tight text-[#1c1916]">Находка</div>
+      <div className="mx-auto mt-4 flex items-center rounded-full border border-[#e4d8c8] bg-white px-4 py-2 text-[15px]">
         <span className="truncate">{mode === "show" ? twist || "запрос" : "поиск"}</span>
       </div>
       <div className="mt-5">
-        <div className="text-[12px] text-[#188038]">https://answer.example › совет</div>
-        <h3 className="text-[18px] text-[#1a0dab]">{mode === "show" ? "Результат, который лучше не открывать" : "Ищем…"}</h3>
-        <p className="mt-1 text-[14px] leading-snug text-[#444]">{mode === "show" ? write : <Dots />}</p>
+        <div className="text-[12px] text-[#3d6b58]">nahodka.example › совет</div>
+        <h3 className="text-[18px] text-[#1c1916]">{mode === "show" ? "Результат, который лучше не открывать" : "Ищем…"}</h3>
+        <p className="mt-1 text-[14px] leading-snug text-[#3f3a34]">{mode === "show" ? write : <Dots />}</p>
       </div>
     </article>
   );
@@ -166,14 +146,19 @@ function SearchCard({ mode, write, twist, compact }: StageProps) {
 
 function ReviewCard({ mode, write, twist, author }: StageProps) {
   return (
-    <article className="bg-white">
-      <div className="relative h-28 bg-[linear-gradient(160deg,#b7e4c7,#74c0fc_40%,#d8f3dc)]">
-        <div className="absolute left-1/2 top-8 grid size-8 -translate-x-1/2 place-items-center rounded-full bg-[#ea4335] text-white shadow">●</div>
+    <article className="bg-[#f7f4ef]">
+      <div className="relative h-28 bg-[#d5dfd2]">
+        <div className="absolute left-[18%] top-6 h-px w-[64%] bg-[#b7c3b2]" />
+        <div className="absolute left-[42%] top-0 h-full w-px bg-[#b7c3b2]" />
+        <div className="absolute left-1/2 top-8 grid size-8 -translate-x-1/2 place-items-center">
+          <span className="size-4 rotate-45 bg-[#9a4632]" />
+        </div>
       </div>
-      <div className="-mt-4 rounded-t-3xl bg-white px-4 pb-5 pt-4">
+      <div className="px-4 pb-5 pt-4">
+        <Brand kind="review" />
         <h3 className="text-[22px] font-semibold leading-tight">{mode === "show" ? twist || "Место" : "Новый отзыв"}</h3>
-        <div className="mt-1 text-[14px] text-[#e37400]">★ 1.6 · 3 отзыва</div>
-        <div className="mt-4 border-t pt-3">
+        <div className="mt-1 text-[14px] text-[#9a4632]">★ 1.6 · 3 отзыва</div>
+        <div className="mt-4 border-t border-[#e4d8c8] pt-3">
           <div className="text-[13px] font-semibold">{author || "Гость"}</div>
           <p className="mt-1 text-[15px] leading-snug">{mode === "show" ? write : <Dots />}</p>
         </div>
@@ -184,14 +169,15 @@ function ReviewCard({ mode, write, twist, author }: StageProps) {
 
 function VideoCard({ mode, write, twist, author, compact }: StageProps) {
   return (
-    <article className="bg-white">
-      <div className={`grid place-items-center bg-[#111] text-white ${compact ? "h-24" : "h-52"}`}>
-        <span className="grid size-14 place-items-center rounded-2xl bg-[#ff0033] text-2xl">▶</span>
+    <article className="bg-[#f7f4ef]">
+      <div className={`grid place-items-center bg-[#241c18] text-[#f6f1ea] ${compact ? "h-24" : "h-52"}`}>
+        <span className="grid size-14 place-items-center rounded-full border border-[#f6f1ea]/40 text-2xl">▶</span>
       </div>
       <div className="px-4 py-3">
+        <Brand kind="video" />
         <h3 className="text-[18px] font-semibold leading-snug">{mode === "show" ? twist || "Без названия" : "Ролик ещё грузится"}</h3>
-        <p className="mt-1 text-[12px] text-[#666]">Кривая лента · 12 просмотров · только что</p>
-        <div className="mt-3 flex gap-2 border-t pt-3">
+        <p className="mt-1 text-[12px] text-[#5c564f]">Показ · 12 просмотров · только что</p>
+        <div className="mt-3 flex gap-2 border-t border-[#e4d8c8] pt-3">
           <Avatar name={author || "?"} />
           <p className="text-[14px] leading-snug"><b>{author || "Зритель"}</b> {mode === "show" ? write : <Dots />}</p>
         </div>
@@ -202,29 +188,29 @@ function VideoCard({ mode, write, twist, author, compact }: StageProps) {
 
 function AiCard({ mode, write, twist, compact }: StageProps) {
   return (
-    <article className={`bg-[#f7f7f8] ${compact ? "p-3" : "px-4 py-5"}`}>
-      <div className="mb-4 text-center text-[13px] font-medium text-[#666]">Новый чат</div>
-      <div className="ml-auto max-w-[90%] rounded-3xl bg-[#ececf1] px-4 py-3 text-[15px] leading-snug">
-        {mode === "show" ? twist || "…" : "Пользователь пишет"}
+    <article className={`bg-[#f7f4ef] ${compact ? "p-3" : "px-4 py-5"}`}>
+      <div className="mb-4 text-center text-[18px] font-semibold text-[#1c1916]">Подсказка</div>
+      <div className="ml-auto max-w-[90%] rounded-3xl bg-[#efe6da] px-4 py-3 text-[15px] leading-snug">
+        {mode === "show" ? twist || "…" : "Человек пишет"}
       </div>
       <div className="mt-4 flex gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#111] text-[12px] text-white">✦</span>
-        <p className="pt-1 text-[15px] leading-relaxed text-[#222]">{mode === "show" ? write : <Dots />}</p>
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#3f342c] text-[12px] text-[#f6f1ea]">П</span>
+        <p className="pt-1 text-[15px] leading-relaxed text-[#1c1916]">{mode === "show" ? write : <Dots />}</p>
       </div>
-      {!compact && mode === "show" ? <p className="mt-8 text-center text-[11px] text-[#999]">Модель отвечает уверенно. Это ничего не гарантирует.</p> : null}
+      {!compact && mode === "show" ? <p className="mt-8 text-center text-[11px] text-[#8a8178]">Подсказка отвечает уверенно. Это ничего не гарантирует.</p> : null}
     </article>
   );
 }
 
-function InstagramCard({ mode, write, twist, photo, author, topic, compact }: StageProps) {
+function FeedCard({ mode, write, twist, photo, author, topic, compact }: StageProps) {
   return (
-    <article className="bg-white">
+    <article className="bg-[#f7f4ef]">
       <header className="flex items-center justify-between px-4 py-3">
-        <span className="font-[family-name:var(--font-script)] text-[34px] leading-none">Instagram</span>
+        <span className="text-[22px] font-semibold tracking-tight">Витрина</span>
         <span className="text-xl">♡</span>
       </header>
       <div className="flex items-center gap-2 px-3 pb-2">
-        <Avatar name={author || "?"} ring />
+        <Avatar name={author || "?"} />
         <div>
           <div className="text-[13px] font-semibold">{handleOf(author || "user").slice(1)}</div>
           <div className="text-[11px] text-black/50">{topic || "лента"}</div>
@@ -261,10 +247,10 @@ function PhotoFrame({ photo, tall, label }: { photo?: Photo | null; tall?: boole
   );
 }
 
-function Avatar({ name, light, ring }: { name: string; light?: boolean; ring?: boolean }) {
+function Avatar({ name, light }: { name: string; light?: boolean }) {
   return (
-    <span className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-bold ${ring ? "bg-[conic-gradient(from_180deg,#f9ce34,#ee2a7b,#6228d7)] p-[2px]" : ""} ${light ? "bg-white/20 text-white" : "bg-[#dedad3] text-[#333]"}`}>
-      <span className={`grid size-full place-items-center rounded-full ${ring ? "bg-white" : ""}`}>{name.slice(0, 1).toUpperCase()}</span>
+    <span className={`grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-bold ${light ? "bg-white/20 text-white" : "bg-[#e4d8c8] text-[#3f342c]"}`}>
+      {name.slice(0, 1).toUpperCase()}
     </span>
   );
 }

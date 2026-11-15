@@ -1,4 +1,4 @@
-import type { LineupId, RoundKind, Skins } from "./types";
+import type { RoundKind } from "./types";
 
 export const PALETTE = [
   "#ff5a36",
@@ -11,42 +11,20 @@ export const PALETTE = [
   "#f97316",
 ];
 
-export const LINEUPS: Record<LineupId, RoundKind[]> = {
-  classic: ["messenger", "thread", "job", "market", "ai", "instagram"],
-  browsing: ["search", "review", "video", "thread", "ai", "instagram"],
+export const APP_NAME: Record<RoundKind, string> = {
+  messenger: "Весточка",
+  thread: "Эхо",
+  job: "Смена",
+  market: "Лавка",
+  search: "Находка",
+  review: "Метка",
+  video: "Показ",
+  ai: "Подсказка",
+  instagram: "Витрина",
 };
 
-export const LINEUP_COPY: Record<LineupId, { title: string; detail: string }> = {
-  classic: {
-    title: "Чаты и магазины",
-    detail: "Мессенджер, тред, вакансия, объявление, нейросеть и лента",
-  },
-  browsing: {
-    title: "Поиск и карты",
-    detail: "Поиск, отзыв, ролик, тред, нейросеть и лента",
-  },
-};
-
-export function skinsFromSeed(seed: number): Skins {
-  const messenger = (["telegram", "whatsapp", "viber"] as const)[Math.abs(seed) % 3];
-  const job = (["workua", "linkedin", "indeed"] as const)[Math.floor(Math.abs(seed) / 3) % 3];
-  const market = (["olx", "amazon"] as const)[Math.floor(Math.abs(seed) / 9) % 2];
-  const thread = (["threads", "x"] as const)[Math.floor(Math.abs(seed) / 2) % 2];
-  return { messenger, job, market, thread };
-}
-
-export function roundTitle(kind: RoundKind, skins: Skins): string {
-  if (kind === "messenger") {
-    return { telegram: "Телеграм", whatsapp: "Вотсап", viber: "Вайбер" }[skins.messenger];
-  }
-  if (kind === "thread") return skins.thread === "x" ? "Твиттер" : "Тредс";
-  if (kind === "job") return { workua: "Ворк", linkedin: "Линкедин", indeed: "Индид" }[skins.job];
-  if (kind === "market") return skins.market === "olx" ? "ОЛХ" : "Амазон";
-  if (kind === "search") return "Поиск";
-  if (kind === "review") return "Карты";
-  if (kind === "video") return "Ролик";
-  if (kind === "ai") return "Нейросеть";
-  return "Лента";
+export function roundTitle(kind: RoundKind): string {
+  return APP_NAME[kind];
 }
 
 export function limits(kind: RoundKind): { write: number; twist: number } {
@@ -286,9 +264,9 @@ export function hashString(value: string): number {
   return hash;
 }
 
-export function fallbackTopic(kind: RoundKind, code: string, seat: number): Topic {
+export function fallbackTopic(kind: RoundKind, code: string, seat: number, shift = 0): Topic {
   const list = TOPICS[kind];
-  return list[(hashString(`${code}:${kind}`) + seat) % list.length];
+  return list[(hashString(`${code}:${kind}`) + seat + shift) % list.length];
 }
 
 export function botWrite(kind: RoundKind, seat: number, round: number): string {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { addBot, advancePhase, applyFallback, freshRoom, missingTopics, pauseGame, scoreRound, setCap, setDebug, startGame, submitVote, submitWrite, tick, twisterSeat } from "./engine";
-import type { RoomState } from "./types";
+import { addBot, advancePhase, applyFallback, drawPlaylist, freshRoom, MATCH_SIZE, missingTopics, nextMatch, pauseGame, scoreRound, setCap, setDebug, startGame, submitVote, submitWrite, tick, twisterSeat } from "./engine";
+import { ROUND_KINDS, type RoomState } from "./types";
+
+const stick = () => 0.999999;
 
 function base(cap = 3): RoomState {
   return freshRoom({
@@ -8,8 +10,7 @@ function base(cap = 3): RoomState {
     hostToken: "host",
     cap,
     demo: false,
-    lineup: "classic",
-    seed: 1,
+    playlist: ["messenger", "thread", "job", "market"],
     now: 0,
   });
 }
@@ -37,6 +38,37 @@ function ready(state: RoomState): RoomState {
     cards: filled.cards.map((card) => (card.kind === "instagram" ? { ...card, photos: [] } : card)),
   };
 }
+
+describe("roulette", () => {
+  it("deals four fresh modes, then skips everything already played", () => {
+    const first = drawPlaylist([], stick);
+    expect(first).toEqual(ROUND_KINDS.slice(0, MATCH_SIZE));
+    const second = drawPlaylist(first, stick);
+    expect(second).toEqual(ROUND_KINDS.slice(MATCH_SIZE, MATCH_SIZE * 2));
+    expect(second.some((kind) => first.includes(kind))).toBe(false);
+  });
+
+  it("keeps the one mode still unseen and does not repeat the match just played", () => {
+    const played = ROUND_KINDS.slice(0, MATCH_SIZE * 2);
+    const third = drawPlaylist(played, stick);
+    expect(third[0]).toBe("instagram");
+    expect(third.slice(1)).toEqual(["messenger", "thread", "job"]);
+    expect(third.some((kind) => played.slice(-MATCH_SIZE).includes(kind))).toBe(false);
+  });
+
+  it("opens the next match in the same room and asks for new prompts", () => {
+    const finished = { ...startGame(ready(base()), 0), status: "finished" as const, phase: "done" as const };
+    const again = nextMatch(finished, stick);
+    expect(again.phase).toBe("lobby");
+    expect(again.match).toBe(2);
+    expect(again.played).toEqual(finished.playlist);
+    expect(again.playlist).toEqual(["search", "review", "video", "ai"]);
+    expect(again.players).toHaveLength(3);
+    expect(again.scores).toEqual({});
+    expect(again.usedTopics.length).toBeGreaterThan(0);
+    expect(again.cards.some((card) => again.playlist.includes(card.kind) && card.topic)).toBe(false);
+  });
+});
 
 describe("deck", () => {
   it("fills every seat in the lineup and only adds the new seats when the cap grows", () => {
