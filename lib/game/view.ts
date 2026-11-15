@@ -42,6 +42,9 @@ export function buildView(state: RoomState, version: number, token: string | nul
     kind,
     playlist: state.playlist,
     deadline: state.deadline,
+    debug: state.debug,
+    paused: state.paused,
+    pauseRemaining: state.pauseRemaining,
     players: state.players
       .slice()
       .sort((a, b) => a.joinedAt - b.joinedAt)

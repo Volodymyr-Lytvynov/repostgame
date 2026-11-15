@@ -107,6 +107,9 @@ export type RoomState = {
   seats: string[];
   deckLock: number | null;
   promptSource: "model" | "backup" | null;
+  debug: boolean;
+  paused: boolean;
+  pauseRemaining: number | null;
 };
 
 export type ShownCard = {
@@ -160,6 +163,9 @@ export type ClientView = {
   kind: RoundKind | null;
   playlist: RoundKind[];
   deadline: number | null;
+  debug: boolean;
+  paused: boolean;
+  pauseRemaining: number | null;
   players: Array<{ id: string; name: string; color: string; bot: boolean; host: boolean; score: number }>;
   seatsReady: string[];
   deck: { ready: boolean; done: number; total: number; label: string; source: RoomState["promptSource"] };

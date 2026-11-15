@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { LINEUP_COPY, roundTitle, twistCopy, writeCopy } from "@/lib/game/content";
 import { phaseLabel } from "@/lib/game/view";
 import type { ClientView, LineupId, PlayerTask } from "@/lib/game/types";
+import { DebugBar } from "./debug-bar";
 import { SiteCard } from "./site-card";
 import { QrImage } from "./qr-image";
 import { readSession, useRoom, writeSession } from "./use-room";
@@ -107,7 +108,8 @@ function Controller({
           <h1 className="text-2xl font-semibold">{view.phase === "lobby" ? "Ждём игроков" : phaseLabel(view.phase)}</h1>
           {finale && view.phase !== "done" ? <p className="text-sm text-[#ffb020]">Финал, очки ×2</p> : null}
         </div>
-        {left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-3xl font-semibold tabular-nums">{left}</div> : null}
+        {view.paused ? <div className="text-3xl font-semibold text-[#ffb020]">Пауза</div> : null}
+        {!view.paused && left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-3xl font-semibold tabular-nums">{left}</div> : null}
       </header>
       {offline ? <p className="mt-3 text-sm text-[#ffb020]">Нет связи. Пробуем ещё.</p> : null}
       <div className="mt-6">
@@ -118,9 +120,7 @@ function Controller({
         {view.phase !== "lobby" && !view.you?.task ? <Waiting view={view} /> : null}
         {view.phase === "done" ? <Done view={view} /> : null}
       </div>
-      {(view.isHost || view.you?.host) && view.phase !== "lobby" && view.phase !== "done" ? (
-        <button type="button" className="mt-8 text-sm text-white/45 underline" onClick={() => void send({ type: "skip" })}>Пропустить таймер</button>
-      ) : null}
+      {view.isHost || view.you?.host ? <div className="mt-8"><DebugBar view={view} send={send} /></div> : null}
     </PhoneShell>
   );
 }

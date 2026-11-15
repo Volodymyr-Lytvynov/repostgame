@@ -3,8 +3,12 @@ import { generateTopics } from "./ai/generate";
 import { searchPhotos } from "./ai/images";
 import { sql } from "./db";
 import {
+  addBot,
   addPlayer,
   advancePhase,
+  pauseGame,
+  resumeGame,
+  setDebug,
   applyFallback,
   applyTopics,
   cleanName,
@@ -153,7 +157,11 @@ type Action =
   | { type: "write"; text?: string; photo?: number | null }
   | { type: "twist"; text?: string }
   | { type: "vote"; seat?: number }
-  | { type: "skip" };
+  | { type: "skip" }
+  | { type: "debug"; on?: boolean }
+  | { type: "pause" }
+  | { type: "resume" }
+  | { type: "bot" };
 
 export async function act(code: string, token: string | null, action: Action): Promise<{ view: ClientView; token?: string; playerId?: string }> {
   const normalized = normalizeCode(code);
@@ -190,6 +198,22 @@ export async function act(code: string, token: string | null, action: Action): P
       if (!host) throw new GameError("Начинает создатель комнаты");
       if (!isDeckReady(current)) throw new GameError("Колода ещё собирается");
       return startGame(current, now);
+    }
+    if (action.type === "debug") {
+      if (!host) throw new GameError("Режим проверки включает создатель");
+      return setDebug(current, Boolean(action.on), now);
+    }
+    if (action.type === "pause") {
+      if (!host && !current.demo) throw new GameError("Паузу ставит создатель");
+      return pauseGame(current, now);
+    }
+    if (action.type === "resume") {
+      if (!host && !current.demo) throw new GameError("Продолжить может создатель");
+      return resumeGame(current, now);
+    }
+    if (action.type === "bot") {
+      if (!host) throw new GameError("Бота добавляет создатель");
+      return addBot(current, now);
     }
     if (action.type === "skip") {
       if (!host && !current.demo) throw new GameError("Дальше может переключить создатель");

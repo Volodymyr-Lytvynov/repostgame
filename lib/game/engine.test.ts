@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyFallback, freshRoom, missingTopics, scoreRound, setCap, startGame, submitVote, submitWrite, tick, twisterSeat } from "./engine";
+import { addBot, advancePhase, applyFallback, freshRoom, missingTopics, pauseGame, scoreRound, setCap, setDebug, startGame, submitVote, submitWrite, tick, twisterSeat } from "./engine";
 import type { RoomState } from "./types";
 
 function base(cap = 3): RoomState {
@@ -114,6 +114,26 @@ describe("scoring", () => {
     });
     expect(events.map((event) => event.delta).sort()).toEqual([100, 100]);
     expect(events.every((event) => !event.reason.includes("лучший"))).toBe(true);
+  });
+});
+
+describe("debug pause", () => {
+  it("holds the phase until the host steps, and keeps the pause on the next phase", () => {
+    let state = setDebug(startGame(ready(base()), 0), true, 0);
+    expect(tick(state, 999999).phase).toBe("write");
+    state = pauseGame(state, 1000);
+    expect(tick(state, 999999).paused).toBe(true);
+    state = advancePhase(state, 1000);
+    expect(state.phase).toBe("twist");
+    expect(state.paused).toBe(true);
+    expect(state.deadline).toBeNull();
+  });
+
+  it("adds a bot only before the start of a debug room", () => {
+    const lobby = setCap(setDebug(ready(base()), true, 0), 4);
+    const withBot = addBot(lobby, 10);
+    expect(withBot.players.some((player) => player.bot)).toBe(true);
+    expect(() => addBot({ ...withBot, phase: "write", status: "playing" }, 30)).toThrow(/до старта/);
   });
 });
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { phaseLabel } from "@/lib/game/view";
 import { roundTitle } from "@/lib/game/content";
 import type { ClientView } from "@/lib/game/types";
+import { DebugBar } from "./debug-bar";
 import { QrImage } from "./qr-image";
 import { SiteCard } from "./site-card";
 import { readSession, useRoom } from "./use-room";
@@ -36,7 +37,9 @@ export function ScreenApp({ code }: { code: string }) {
           {finale && view.phase !== "done" ? <p className="text-[#ffb020]">Финал · очки ×2</p> : null}
         </div>
         <div className="text-right">
-          {left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-4xl font-semibold tabular-nums">{left}</div> : null}
+          {view.paused ? <div className="text-4xl font-semibold text-[#ffb020]">Пауза</div> : null}
+          {!view.paused && left !== null && view.phase !== "lobby" && view.phase !== "done" ? <div className="text-4xl font-semibold tabular-nums">{left}</div> : null}
+          {view.debug && !view.paused ? <p className="text-sm text-[#ffb020]">Проверка</p> : null}
           <p className="max-w-[16rem] text-sm text-white/60">{phaseLabel(view.phase)}</p>
         </div>
       </header>
@@ -68,13 +71,7 @@ export function ScreenApp({ code }: { code: string }) {
       <footer className="space-y-3">
         {offline ? <p className="text-center text-sm text-[#ffb020]">Нет связи. Пробуем ещё.</p> : null}
         <PlayerRow view={view} />
-        {view.isHost || view.demo ? (
-          view.phase !== "lobby" && view.phase !== "done" ? (
-            <div className="text-center">
-              <button type="button" className="text-sm text-white/50 underline" onClick={() => void send({ type: "skip" })}>Дальше</button>
-            </div>
-          ) : null
-        ) : null}
+        {view.isHost || view.demo ? <DebugBar view={view} send={send} /> : null}
       </footer>
     </Shell>
   );

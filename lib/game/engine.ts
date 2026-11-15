@@ -60,6 +60,9 @@ export function freshRoom(input: {
     seats: [],
     deckLock: null,
     promptSource: null,
+    debug: false,
+    paused: false,
+    pauseRemaining: null,
   };
   const withBots = input.demo ? addDemoBots(state, input.now) : state;
   return ensureShells(withBots);
@@ -272,14 +275,52 @@ export function startGame(state: RoomState, now: number): RoomState {
 }
 
 export function tick(state: RoomState, now: number): RoomState {
-  if (state.status === "finished") return state;
+  if (state.status === "finished" || state.paused) return state;
   if (state.phase === "lobby") {
-    if (state.demo && isDeckReady(state) && state.players.length >= 3) return startGame(state, now);
+    if (state.demo && !state.debug && isDeckReady(state) && state.players.length >= 3) return startGame(state, now);
     return state;
   }
   const withBots = applyBotMoves(state, now);
   if (!shouldAdvance(withBots, now)) return withBots;
   return advancePhase(withBots, now);
+}
+
+export function setDebug(state: RoomState, on: boolean, now: number): RoomState {
+  if (!on && state.paused) return { ...resumeGame(state, now), debug: false };
+  return { ...state, debug: on };
+}
+
+export function pauseGame(state: RoomState, now: number): RoomState {
+  if (state.phase === "lobby" || state.phase === "done" || state.paused) return state;
+  const remaining = state.deadline === null ? duration(state.phase, state.demo) : Math.max(0, state.deadline - now);
+  return { ...state, debug: true, paused: true, deadline: null, pauseRemaining: remaining };
+}
+
+export function resumeGame(state: RoomState, now: number): RoomState {
+  if (!state.paused) return state;
+  return {
+    ...state,
+    paused: false,
+    deadline: now + (state.pauseRemaining ?? duration(state.phase, state.demo)),
+    pauseRemaining: null,
+  };
+}
+
+const BOT_NAMES = ["Лёша", "Марина", "Богдан", "Света", "Тимур", "Катя", "Остап", "Нина"];
+
+export function addBot(state: RoomState, now: number): RoomState {
+  if (!state.debug) throw new GameError("Бота можно добавить в режиме проверки");
+  if (state.phase !== "lobby") throw new GameError("Бота можно добавить только до старта");
+  const name = BOT_NAMES.find((item) => !state.players.some((player) => player.name === item)) ?? `Бот ${state.players.length + 1}`;
+  const index = state.players.length;
+  return addPlayer(state, {
+    id: `bot-${index}-${state.code}`,
+    token: `bot-token-${index}-${state.code}`,
+    name,
+    bot: true,
+    host: false,
+    now,
+  });
 }
 
 function applyBotMoves(state: RoomState, now: number): RoomState {
@@ -332,6 +373,7 @@ function botReady(state: RoomState, now: number): boolean {
 }
 
 function shouldAdvance(state: RoomState, now: number): boolean {
+  if (state.debug || state.paused) return false;
   if (state.phase === "reveal" || state.phase === "scores") return Boolean(state.deadline && now >= state.deadline);
   if (state.phase === "write" || state.phase === "twist" || state.phase === "vote") {
     return phaseComplete(state) || Boolean(state.deadline && now >= state.deadline);
@@ -352,7 +394,7 @@ export function advancePhase(state: RoomState, now: number): RoomState {
   if (state.phase === "reveal") {
     const order = revealOrder(state);
     if (state.reveal + 1 < order.length) {
-      return { ...state, reveal: state.reveal + 1, deadline: now + duration("reveal", state.demo) };
+      return { ...state, reveal: state.reveal + 1, ...schedule(state, now, "reveal") };
     }
     if (votableSeats(state).length === 0) return beginScores(applyScores(state), now);
     return beginVote(state, now);
@@ -376,32 +418,38 @@ function beginTwist(state: RoomState, now: number): RoomState {
       text: "",
     });
   }
-  return { ...state, twists, phase: "twist", deadline: now + duration("twist", state.demo) };
+  return { ...state, twists, phase: "twist", ...schedule(state, now, "twist") };
+}
+
+function schedule(state: RoomState, now: number, phase: Phase) {
+  const ms = duration(phase, state.demo);
+  if (state.paused) return { paused: true, deadline: null, pauseRemaining: ms };
+  return { paused: false, deadline: now + ms, pauseRemaining: null };
 }
 
 function beginReveal(state: RoomState, now: number): RoomState {
   if (revealOrder(state).length === 0) return beginScores(applyScores(state), now);
-  return { ...state, phase: "reveal", reveal: 0, deadline: now + duration("reveal", state.demo) };
+  return { ...state, phase: "reveal", reveal: 0, ...schedule(state, now, "reveal") };
 }
 
 function beginVote(state: RoomState, now: number): RoomState {
-  return { ...state, phase: "vote", deadline: now + duration("vote", state.demo) };
+  return { ...state, phase: "vote", ...schedule(state, now, "vote") };
 }
 
 function beginScores(state: RoomState, now: number): RoomState {
-  return { ...state, phase: "scores", deadline: now + duration("scores", state.demo) };
+  return { ...state, phase: "scores", ...schedule(state, now, "scores") };
 }
 
 function nextRound(state: RoomState, now: number): RoomState {
   if (state.round + 1 >= state.playlist.length) {
-    return { ...state, status: "finished", phase: "done", deadline: null };
+    return { ...state, status: "finished", phase: "done", deadline: null, paused: false, pauseRemaining: null };
   }
   return {
     ...state,
     round: state.round + 1,
     phase: "write",
     reveal: 0,
-    deadline: now + duration("write", state.demo),
+    ...schedule(state, now, "write"),
   };
 }
 
